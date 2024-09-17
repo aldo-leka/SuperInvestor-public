@@ -1,0 +1,81 @@
+﻿@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+
+@inject NavigationManager NavigationManager
+@inject UserService UserService
+@inject CompanyTickerService CompanyTickerService
+@inject NoteService NoteService
+
+<div class="container mt-4">
+    <h1 class="mb-4">Your Recent Research</h1>
+    @if (recentCompanies.Any())
+    {
+        <div class="row row-cols-1 row-cols-md-3 g-4">
+            @foreach (var company in recentCompanies)
+            {
+                <div class="col">
+                    <SuperCard Title="@company.Name" Class="h-100">
+                        <div class="d-flex flex-column h-100">
+                            <div class="flex-grow-1">
+                                <p class="card-text">Ticker: @company.Ticker</p>
+                                <p class="card-text">Last Note: @company.LastNoteDate.ToShortDateString()</p>
+                            </div>
+                            <div class="mt-auto">
+                                <SuperButton OnClick="@(() => NavigationManager.NavigateTo($"companies/{company.Ticker}"))" CssClass="btn btn-primary w-100">View Company</SuperButton>
+                            </div>
+                        </div>
+                    </SuperCard>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="alert alert-info" role="alert">
+            <h4 class="alert-heading">Welcome to SuperInvestor!</h4>
+            <p>It looks like you haven't started any research yet. Don't worry, it's easy to get started!</p>
+            <hr>
+            <p class="mb-0">
+                To begin, use the search bar above to find a company you're interested in. 
+                Once you've viewed a company and added some notes, your recent research will appear here.
+            </p>
+        </div>
+    }
+</div>
+
+@code {
+    private List<RecentCompany> recentCompanies = new List<RecentCompany>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var tickers = await CompanyTickerService.GetTickersAsync();
+        var user = await UserService.GetUser();
+
+        var recentNotes = await (await NoteService.GetNotes(user.Id))
+            .GroupBy(n => n.Ticker)
+            .Select(g => new 
+            {
+                Ticker = g.Key,
+                LastNoteDate = g.Max(n => n.UpdatedAt)
+            })
+            .OrderByDescending(c => c.LastNoteDate)
+            .Take(6)
+            .ToListAsync();
+
+        recentCompanies = recentNotes
+            .Select(n => new RecentCompany
+            {
+                Ticker = n.Ticker,
+                Name = tickers.FirstOrDefault(t => t.Symbol == n.Ticker)?.Name ?? "Unknown",
+                LastNoteDate = n.LastNoteDate
+            })
+            .ToList();
+    }
+
+    private class RecentCompany
+    {
+        public string Ticker { get; set; }
+        public string Name { get; set; }
+        public DateTime LastNoteDate { get; set; }
+    }
+}

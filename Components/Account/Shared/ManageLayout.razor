@@ -1,0 +1,17 @@
+﻿@inherits LayoutComponentBase
+@layout AccountLayout
+
+<div class="container mt-5">
+    <div class="row">
+        <div class="col-md-3">
+            <SuperCard Title="Manage Account">
+                <ManageNavMenu />
+            </SuperCard>
+        </div>
+        <div class="col-md-9">
+            <SuperCard Title="Account Settings">
+                @Body
+            </SuperCard>
+        </div>
+    </div>
+</div>

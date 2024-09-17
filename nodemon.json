@@ -1,0 +1,4 @@
+{
+  "ignore": [ "wwwroot/dist/*" ],
+  "ext": "js,css,html"
+}

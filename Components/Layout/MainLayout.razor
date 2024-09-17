@@ -1,0 +1,252 @@
+﻿@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+
+@inherits LayoutComponentBase
+
+@implements IDisposable
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject UserService UserService
+@inject SubscriptionService SubscriptionService
+@inject ToastService ToastService
+
+<head>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        main {
+            flex: 1;
+        }
+
+        .navbar-brand {
+            text-decoration: none !important;
+            transition: opacity 0.3s ease;
+        }
+
+            .navbar-brand:hover {
+                opacity: 0.8;
+            }
+
+        .navbar .container-fluid {
+            padding: 0 15px;
+        }
+
+        #ticker-autocomplete {
+            width: 100%;
+            max-width: none;
+        }
+
+        @@media (min-width: 992px) {
+            .navbar .container-fluid {
+                flex-wrap: nowrap;
+            }
+
+            #ticker-autocomplete {
+                max-width: 400px;
+            }
+        }
+
+        @@media (max-width: 991.98px) {
+            .navbar-brand h3 {
+                font-size: 1.5rem;
+            }
+
+            #ticker-autocomplete {
+                max-width: 200px;
+            }
+
+            .dropdown-menu {
+                position: fixed !important;
+                top: auto !important;
+                right: 0 !important;
+                bottom: 0 !important;
+                left: 0 !important;
+                transform: none !important;
+                width: 100%;
+                max-height: 80vh;
+                overflow-y: auto;
+                margin: 0;
+                border-radius: 0;
+            }
+
+            .dropdown-menu-end {
+                transform: none !important;
+            }
+
+            .navbar .container-fluid {
+                flex-wrap: nowrap;
+            }
+
+            .navbar .d-flex.align-items-center {
+                flex-grow: 0;
+            }
+        }
+    </style>
+</head>
+
+<header class="navbar navbar-expand-lg navbar-dark" style="min-height: 100px; padding: 10px 0;">
+    <div class="container-fluid">
+        <div class="d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center w-100">
+            <div class="d-flex align-items-center mb-2 mb-lg-0 me-lg-3">
+                <a class="navbar-brand" href="/">
+                    <h3 class="text-white mb-0">Super Investor</h3>
+                </a>
+            </div>
+            <div class="flex-grow-1 mb-2 mb-lg-0 me-lg-3">
+                <input id="ticker-autocomplete" class="form-control" type="search" placeholder="Ticker or company name" autocomplete="off" aria-label="Search">
+            </div>
+            <div class="d-flex align-items-center">
+                <AuthorizeView>
+                    <Authorized>
+                        <div class="dropdown">
+                            <button class="btn btn-outline-light dropdown-toggle" type="button" id="profileDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                @initials
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="profileDropdown">
+                                <li><h6 class="dropdown-header">@nameOrEmail</h6></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item" href="Account/Manage">Manage account</a></li>
+                                @if (!hasActiveSubscription)
+                                {
+                                    <li><a class="dropdown-item" href="/upgrade">Upgrade</a></li>
+                                }
+                                @if (isAdmin)
+                                {
+                                    <li><a class="dropdown-item" href="/admin">Admin</a></li>
+                                }
+                                <li>
+                                    <form action="Account/Logout" method="post" class="px-4 py-3">
+                                        <AntiforgeryToken />
+                                        <button type="submit" class="btn btn-primary w-100">Sign out</button>
+                                    </form>
+                                </li>
+                            </ul>
+                        </div>
+                    </Authorized>
+                    <NotAuthorized>
+                        <a class="btn btn-outline-light me-2" href="Account/Register">Register</a>
+                        <a class="btn btn-outline-light" href="Account/Login">Login</a>
+                    </NotAuthorized>
+                </AuthorizeView>
+            </div>
+        </div>
+    </div>
+</header>
+
+<main>
+    @Body
+</main>
+
+<footer class="footer mt-auto py-3 bg-light">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-6">
+                <span class="text-muted">© @DateTime.Now.Year Super Investor. All rights reserved.</span>
+            </div>
+            <div class="col-md-6 text-md-end">
+                <a href="/privacy" class="text-muted me-3">Privacy Policy</a>
+                <a href="/terms" class="text-muted me-3">Terms of Service</a>
+                <a href="/help" class="text-muted me-3">Help</a>
+                <a href="/contact" class="text-muted">Contact Us</a>
+            </div>
+        </div>
+    </div>
+</footer>
+
+<SuperToast @ref="ToastComponent" />
+
+<script>
+    window.getBaseUrl = () => {
+        return '@NavigationManager.BaseUri.TrimEnd('/')';
+    }
+
+    window.initializeAutocomplete = function () {
+        $('#ticker-autocomplete').autocomplete({
+            source: function (request, response) {
+                $.ajax({
+                    url: window.getBaseUrl() + '/api/tickers',
+                    data: { query: request.term },
+                    success: function (data) {
+                        response(data);
+                    }
+                });
+            },
+            minLength: 1,
+            select: function (event, ui) {
+                if (ui.item) {
+                    const ticker = ui.item.value.split(' ')[0];
+                    window.location.href = '/companies/' + ticker;
+                }
+            }
+        });
+    }
+</script>
+
+@code {
+    private ApplicationUser user;
+    private string initials;
+    private string nameOrEmail;
+    private bool hasActiveSubscription = false;
+    private SuperToast ToastComponent;
+    private bool isAdmin = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ToastService.OnShow += ShowToast;
+        NavigationManager.LocationChanged += LocationChanged;
+
+        var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        if (auth.User.Identity.IsAuthenticated)
+        {
+            user = await UserService.GetUser();
+            initials = GetUserInitials(user);
+            nameOrEmail = user.Name ?? user.Email;
+            hasActiveSubscription = await SubscriptionService.HasActiveSubscription(user);
+            isAdmin = await UserService.IsUserAdmin(user);
+        }
+    }
+
+    private string GetUserInitials(ApplicationUser user)
+    {
+        if (!string.IsNullOrEmpty(user.Name))
+        {
+            var nameParts = user.Name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (nameParts.Length > 1)
+            {
+                return $"{nameParts[0][0]}{nameParts[^1][0]}".ToUpper();
+            }
+            return user.Name[0].ToString().ToUpper();
+        }
+        return user.Email[0].ToString().ToUpper();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JSRuntime.InvokeVoidAsync("initializeAutocomplete");
+        }
+    }
+
+    private async Task ShowToast(string title, string message, int duration)
+    {
+        await ToastComponent.ShowToast(title, message, duration);
+    }
+
+    private async void LocationChanged(object sender, LocationChangedEventArgs e)
+    {
+        await JSRuntime.InvokeVoidAsync("gtag", "config", "G-E72H0H27KK", new { page_path = e.Location });
+    }
+
+    public void Dispose()
+    {
+        ToastService.OnShow -= ShowToast;
+        NavigationManager.LocationChanged -= LocationChanged;
+    }
+}

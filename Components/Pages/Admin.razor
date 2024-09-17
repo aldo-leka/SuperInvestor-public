@@ -1,0 +1,215 @@
+﻿@page "/admin"
+
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.EntityFrameworkCore
+@using SuperInvestor.Data
+@using SuperInvestor.Services
+@using System.Linq
+
+@inject UserService UserService
+@inject SubscriptionService SubscriptionService
+@inject NoteService NoteService
+@inject CompanyTickerService CompanyTickerService
+@inject FilingCategoryService FilingCategoryService
+@inject IConfiguration Configuration
+
+@attribute [Authorize(Roles = "Admin")]
+
+<PageTitle>Admin Dashboard - Super Investor</PageTitle>
+
+<div class="container mt-4">
+    <h1 class="mb-4">Admin Dashboard</h1>
+
+    <SuperCard Title="User Management">
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Username</th>
+                        <th>Email</th>
+                        <th>Email Confirmed</th>
+                        <th>Subscription Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var user in users)
+                    {
+                        <tr>
+                            <td>@user.Name</td>
+                            <td>@user.UserName</td>
+                            <td>@user.Email</td>
+                            <td>
+                                @if (user.EmailConfirmed)
+                                {
+                                    <span class="text-success">Confirmed</span>
+                                }
+                                else
+                                {
+                                    <span class="text-danger">Not Confirmed</span>
+                                }
+                            </td>
+                            <td>
+                                @if (user.Subscription != null)
+                                {
+                                    <span class="text-success">Active</span>
+                                }
+                                else
+                                {
+                                    <span class="text-danger">No Subscription</span>
+                                }
+                            </td>
+                            <td>
+                                <SuperButton OnClick="@(() => GrantFreeAccess(user.Id))" Type="ButtonType.Primary">
+                                    Grant Free Access
+                                </SuperButton>
+                            </td>
+                        </tr>
+                        @if (user.Subscription != null)
+                        {
+                            <tr>
+                                <td colspan="6">
+                                    <div class="ms-4">
+                                        <strong>Subscription Details:</strong><br />
+                                        Plan: @user.Subscription.PlanName<br />
+                                        Status: @user.Subscription.Status<br />
+                                        Start Date: @user.Subscription.StartDate?.ToShortDateString()<br />
+                                        Current Period End: @user.Subscription.CurrentPeriodEnd?.ToShortDateString()<br />
+                                        Amount: @user.Subscription.PlanAmount @user.Subscription.PlanCurrency<br />
+                                        Billing Cycle: @user.Subscription.PlanInterval
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </SuperCard>
+
+    <SuperCard Title="Recent User Notes">
+        @foreach (var user in users)
+        {
+            <h4 class="mt-4">@user.Name's Notes</h4>
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Ticker</th>
+                            <th>Filing</th>
+                            <th>Note</th>
+                            <th>Created</th>
+                            <th>Updated</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var note in userNotes[user.Id])
+                        {
+                            <tr>
+                                <td>@note.Ticker</td>
+                                <td>@note.FilingForm (@note.FilingDate.ToShortDateString())</td>
+                                <td class="text-truncate" style="max-width: 200px;">@note.Text</td>
+                                <td>@note.CreatedAt.ToShortDateString()</td>
+                                <td>@note.UpdatedAt.ToShortDateString()</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </SuperCard>
+</div>
+
+@code {
+    private List<ApplicationUser> users = new List<ApplicationUser>();
+    private Dictionary<string, List<NoteViewModel>> userNotes = new Dictionary<string, List<NoteViewModel>>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        users = await UserService.GetAllUsers();
+        foreach (var user in users)
+        {
+            var notes = await NoteService.GetNotes(user.Id);
+            userNotes[user.Id] = await ProcessNotes(notes);
+            
+            // Load subscription information
+            user.Subscription = await SubscriptionService.GetSubscription(user.Id);
+        }
+    }
+
+    private async Task<List<NoteViewModel>> ProcessNotes(IQueryable<Note> notes)
+    {
+        var processedNotes = new List<NoteViewModel>();
+        foreach (var note in await notes.Take(5).ToListAsync())
+        {
+            var ticker = await CompanyTickerService.GetTickerBySymbolAsync(note.Ticker);
+            var submission = await CompanyTickerService.GetSubmission(ticker.Cik.ToString());
+            var filingIndex = submission.Filings.Recent.AccessionNumber.ToList().IndexOf(note.AccessionNumber);
+            var filingForm = submission.Filings.Recent.Form[filingIndex];
+            var filingDate = DateTime.Parse(submission.Filings.Recent.FilingDate[filingIndex]);
+
+            processedNotes.Add(new NoteViewModel
+            {
+                Ticker = note.Ticker,
+                FilingForm = filingForm,
+                FilingDate = filingDate,
+                Text = note.Text,
+                CreatedAt = note.CreatedAt,
+                UpdatedAt = note.UpdatedAt
+            });
+        }
+        return processedNotes;
+    }
+
+    private async Task GrantFreeAccess(string userId)
+    {
+        var subscription = await SubscriptionService.GetSubscription(userId);
+        var oneYearFromNow = DateTime.UtcNow.AddYears(1);
+
+        if (subscription != null)
+        {
+            subscription.CurrentPeriodEnd = oneYearFromNow;
+            subscription.Status = "active";
+            await SubscriptionService.UpdateSubscription(subscription);
+        }
+        else
+        {
+            var newSubscription = new Subscription
+            {
+                UserId = userId,
+                StripeCustomerId = "admin_granted",
+                StripeSubscriptionId = "admin_granted",
+                Status = "active",
+                PlanId = "free_plan_id",
+                CurrentPeriodEnd = oneYearFromNow,
+                StartDate = DateTime.UtcNow,
+                EndDate = oneYearFromNow,
+                PlanName = "Admin Granted Free Plan",
+                PlanAmount = 0,
+                PlanCurrency = "USD",
+                PlanInterval = "year"
+            };
+            await SubscriptionService.CreateSubscription(newSubscription);
+        }
+
+        // Refresh the user list and update the subscription information
+        users = await UserService.GetAllUsers();
+        foreach (var user in users)
+        {
+            user.Subscription = await SubscriptionService.GetSubscription(user.Id);
+        }
+
+        StateHasChanged();
+    }
+
+    private class NoteViewModel
+    {
+        public string Ticker { get; set; }
+        public string FilingForm { get; set; }
+        public DateTime FilingDate { get; set; }
+        public string Text { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public DateTime UpdatedAt { get; set; }
+    }
+}

@@ -1,0 +1,28 @@
+﻿@page "/OrderComplete"
+@inject NavigationManager NavigationManager
+
+<PageTitle>Order Complete - SuperInvestor</PageTitle>
+
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <SuperCard>
+                <div class="text-center">
+                    <i class="fas fa-check-circle text-success" style="font-size: 4rem;"></i>
+                    <h2 class="mt-3">Order Complete</h2>
+                    <p class="lead">Thank you for upgrading to SuperInvestor Pro!</p>
+                    <hr />
+                    <p>Your account has been successfully upgraded, and you now have access to all premium features. We're excited for you to explore the full potential of SuperInvestor!</p>
+                    <div class="mt-4">
+                        <SuperButton OnClick="@(() => NavigationManager.NavigateTo("/"))" Type="ButtonType.Primary">
+                            <i class="fas fa-home me-2"></i>Return to Home
+                        </SuperButton>
+                        <SuperButton OnClick="@(() => NavigationManager.NavigateTo("/"))" Type="ButtonType.Secondary" CssClass="ms-2">
+                            <i class="fas fa-search me-2"></i>Start Researching
+                        </SuperButton>
+                    </div>
+                </div>
+            </SuperCard>
+        </div>
+    </div>
+</div>

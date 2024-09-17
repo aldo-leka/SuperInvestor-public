@@ -1,0 +1,54 @@
+﻿@page "/Account/Manage/Subscription"
+
+@using SuperInvestor.Data
+@using SuperInvestor.Services
+
+@inject UserService UserService
+@inject SubscriptionService SubscriptionService
+@inject NavigationManager NavigationManager
+@inject IConfiguration Configuration
+
+<PageTitle>Subscription & Billing</PageTitle>
+
+<h3>Subscription & Billing</h3>
+
+@if (subscription != null)
+{
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">Current Plan: @subscription.PlanName</h5>
+            <p class="card-text">Status: @subscription.Status</p>
+            <p class="card-text">Amount: @subscription.PlanAmount @subscription.PlanCurrency</p>
+            <p class="card-text">Billing Cycle: @subscription.PlanInterval</p>
+            <p class="card-text">Current Period Ends: @subscription.CurrentPeriodEnd?.ToLocalTime().ToString("MMMM dd, yyyy")</p>
+            @if (subscription.StripeCustomerId != "admin_granted")
+            {
+                <a href="@ManageSubscriptionUrl" class="btn btn-primary">Manage Subscription</a>
+            }
+            else
+            {
+                <p class="text-info">This is an admin-granted subscription. No management options available.</p>
+            }
+        </div>
+    </div>
+}
+else
+{
+    <div class="alert alert-info">
+        You don't have an active subscription. <a href="/upgrade">Upgrade now</a> to access premium features.
+    </div>
+}
+
+@code {
+    private ApplicationUser user;
+    private Data.Subscription subscription;
+    private string ManageSubscriptionUrl => subscription != null && !string.IsNullOrEmpty(subscription.StripeCustomerId) && subscription.StripeCustomerId != "admin_granted"
+        ? SubscriptionService.CreateBillingPortalSession(subscription.StripeCustomerId, NavigationManager.Uri)
+        : "/upgrade";
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = await UserService.GetUser();
+        subscription = await SubscriptionService.GetSubscription(user.Id);
+    }
+}

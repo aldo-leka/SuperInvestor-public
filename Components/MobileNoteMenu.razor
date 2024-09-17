@@ -1,0 +1,231 @@
+@inject NoteService NoteService
+@inject IJSRuntime JSRuntime
+
+@implements IAsyncDisposable
+
+<div class="mobile-note-menu @(IsOpen ? "open" : "") @(ViewingAll ? "" : "half-screen")">
+    <div class="mobile-note-header">
+        @if (CurrentNote is not null)
+        {
+            @if (ViewingAll)
+            {
+                <h5 class="mb-0">Notes</h5>
+            }
+            else
+            {
+                <button class="btn btn-link" @onclick="ViewAll">View all</button>
+                <div class="note-pager">
+                    <button class="btn btn-link" @onclick="PreviousNote" disabled="@(CurrentNoteIndex == 0)">&lt;</button>
+                    <span>@(CurrentNoteIndex + 1) of @AllNotes.Count</span>
+                    <button class="btn btn-link" @onclick="NextNote" disabled="@(CurrentNoteIndex == AllNotes.Count - 1)">&gt;</button>
+                </div>
+            }
+        }
+        else
+        {
+            <h5 class="mb-0">Add New Note</h5>
+        }
+        <button type="button" class="btn-close" @onclick="Close"></button>
+    </div>
+    <div class="mobile-note-content">
+        @if (ViewingAll)
+        {
+            @if (AllNotes.Any())
+            {
+                <div class="list-group">
+                    @foreach (var note in AllNotes)
+                    {
+                        <button class="list-group-item list-group-item-action" @onclick="() => SelectNote(note)">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">@(note.FullText.Length > 50 ? note.FullText.Substring(0, 47) + "..." : note.FullText)</h6>
+                                <small>@note.Date.ToLocalTime().ToString("g")</small>
+                            </div>
+                            <small>@UserName</small>
+                        </button>
+                    }
+                </div>
+            }
+            else
+            {
+                <p class="text-center mt-3">No notes yet. Add a note to get started!</p>
+            }
+        }
+        else if (CurrentNote == null)
+        {
+            <EditForm Model="@newNote" OnValidSubmit="@HandleSubmit">
+                <DataAnnotationsValidator />
+                <div class="mb-3">
+                    <InputTextArea @bind-Value="newNote.FullText" class="form-control" rows="3" />
+                    <ValidationMessage For="@(() => newNote.FullText)" />
+                </div>
+                <div class="d-flex justify-content-end">
+                    <SuperButton Type="ButtonType.Secondary" OnClick="@Close" CssClass="me-2">Cancel</SuperButton>
+                    <SuperButton Type="ButtonType.Primary">Save</SuperButton>
+                </div>
+            </EditForm>
+        }
+        else
+        {
+            <div class="mobile-note-card">
+                <div class="note-meta">
+                    <span class="note-author">@UserName</span>
+                    <span class="note-date">@CurrentNote.Date.ToLocalTime().ToString("g")</span>
+                </div>
+                @if (isEditing)
+                {
+                    <textarea @bind="editedText" class="form-control mb-2" rows="5"></textarea>
+                    <div class="d-flex justify-content-end">
+                        <SuperButton Type="ButtonType.Secondary" OnClick="@CancelEdit" IconClass="fas fa-times" CssClass="me-2">Cancel</SuperButton>
+                        <SuperButton Type="ButtonType.Primary" OnClick="SaveEdit" IconClass="fas fa-save">Save</SuperButton>
+                    </div>
+                }
+                else
+                {
+                    <p>@CurrentNote.FullText</p>
+                    @if (!ReadOnly)
+                    {
+                        <div class="mobile-note-actions">
+                            <SuperButton OnClick="StartEdit" IconClass="fas fa-edit">Edit</SuperButton>
+                            <SuperButton OnClick="ShowDeleteConfirmation" IconClass="fas fa-trash-alt" CssClass="text-danger">Delete</SuperButton>
+                            <SuperButton OnClick="@(() => OnShare.InvokeAsync(CurrentNote))" IconClass="fas fa-share-alt">Share</SuperButton>
+                        </div>
+                    }
+                }
+            </div>
+            @if (showDeleteConfirmation)
+            {
+                <div class="delete-confirmation mt-3">
+                    <p>Are you sure you want to delete this note?</p>
+                    <div class="d-flex justify-content-end">
+                        <SuperButton Type="ButtonType.Secondary" OnClick="CancelDelete" IconClass="fas fa-times" CssClass="me-2">Cancel</SuperButton>
+                        <SuperButton Type="ButtonType.Primary" OnClick="@(() => ConfirmDelete(CurrentNote))" IconClass="fas fa-check" CssClass="text-danger">Confirm</SuperButton>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public EventCallback<bool> IsOpenChanged { get; set; }
+    [Parameter] public NoteViewModel CurrentNote { get; set; }
+    [Parameter] public string UserName { get; set; }
+    [Parameter] public List<NoteViewModel> AllNotes { get; set; }
+    [Parameter] public EventCallback<NoteViewModel> OnEdit { get; set; }
+    [Parameter] public EventCallback<NoteViewModel> OnDelete { get; set; }
+    [Parameter] public EventCallback<NoteViewModel> OnShare { get; set; }
+    [Parameter] public EventCallback<NoteViewModel> OnNoteSelected { get; set; }
+    [Parameter] public EventCallback<string> OnAdd { get; set; }
+    [Parameter] public bool ReadOnly { get; set; }
+
+    private NoteViewModel newNote = new NoteViewModel();
+
+    private async Task Close()
+    {
+        ViewingAll = false;
+        IsOpen = false;
+        await IsOpenChanged.InvokeAsync(false);
+    }
+
+    private async Task HandleSubmit()
+    {
+        if (CurrentNote == null)
+        {
+            await OnAdd.InvokeAsync(newNote.FullText);
+        }
+
+        await Close();
+    }
+
+    private bool ViewingAll { get; set; }
+    private int CurrentNoteIndex => AllNotes.IndexOf(CurrentNote);
+    private bool showDeleteConfirmation = false;
+    private bool isEditing = false;
+    private string editedText = "";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JSRuntime.InvokeVoidAsync("addResizeListener", DotNetObjectReference.Create(this));
+        }
+    }
+
+    [JSInvokable]
+    public void OnWindowResize()
+    {
+        StateHasChanged();
+    }
+
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        await JSRuntime.InvokeVoidAsync("removeResizeListener", DotNetObjectReference.Create(this));
+    }
+
+    private void ViewAll()
+    {
+        ViewingAll = true;
+    }
+
+    private async Task SelectNote(NoteViewModel note)
+    {
+        ViewingAll = false;
+        CurrentNote = note;
+        await OnNoteSelected.InvokeAsync(note);
+    }
+
+    private void PreviousNote()
+    {
+        if (CurrentNoteIndex > 0)
+        {
+            CurrentNote = AllNotes[CurrentNoteIndex - 1];
+            OnNoteSelected.InvokeAsync(CurrentNote);
+        }
+    }
+
+    private void NextNote()
+    {
+        if (CurrentNoteIndex < AllNotes.Count - 1)
+        {
+            CurrentNote = AllNotes[CurrentNoteIndex + 1];
+            OnNoteSelected.InvokeAsync(CurrentNote);
+        }
+    }
+
+    private void ShowDeleteConfirmation()
+    {
+        showDeleteConfirmation = true;
+    }
+
+    private void CancelDelete()
+    {
+        showDeleteConfirmation = false;
+    }
+
+    private async Task ConfirmDelete(NoteViewModel note)
+    {
+        await OnDelete.InvokeAsync(note);
+        showDeleteConfirmation = false;
+        ViewAll();
+    }
+
+    private void StartEdit()
+    {
+        isEditing = true;
+        editedText = CurrentNote.FullText;
+    }
+
+    private async Task SaveEdit()
+    {
+        CurrentNote.FullText = editedText;
+        await OnEdit.InvokeAsync(CurrentNote);
+        isEditing = false;
+    }
+
+    private void CancelEdit()
+    {
+        isEditing = false;
+        editedText = "";
+    }
+}

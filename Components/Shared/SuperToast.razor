@@ -1,0 +1,28 @@
+﻿@inject IJSRuntime JSRuntime
+
+<div class="toast-container position-fixed top-0 start-50 translate-middle-x p-3">
+    <div id="liveToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="toast-header">
+            <strong class="me-auto">@title</strong>
+            <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+        <div class="toast-body">
+            @message
+        </div>
+    </div>
+</div>
+
+@code {
+    private string title;
+    private string message;
+    private int duration;
+
+    public async Task ShowToast(string newTitle, string newMessage, int newDuration)
+    {
+        title = newTitle;
+        message = newMessage;
+        duration = newDuration;
+        StateHasChanged();
+        await JSRuntime.InvokeVoidAsync("showToast", duration);
+    }
+}

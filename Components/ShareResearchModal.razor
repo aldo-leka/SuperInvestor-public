@@ -1,0 +1,79 @@
+﻿@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+@inject ToastService ToastService
+
+<div class="modal @(Show ? "show d-block" : "d-none") centered-modal" tabindex="-1" role="dialog" @onclick="CloseModalOnOutsideClick">
+    <div class="modal-dialog" role="document" @onclick:stopPropagation>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Share Your Research</h5>
+                <button type="button" class="btn-close" @onclick="CloseModal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Anyone can view this filing, even without a SuperInvestor account. Share the link below:</p>
+                <div class="input-group mb-3">
+                    <input type="text" class="form-control" readonly value="@ShareableUrl" id="shareableUrl">
+                    <button class="btn btn-outline-secondary" type="button" @onclick="CopyToClipboard">Copy</button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" @onclick="CloseModal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .modal-dialog {
+        display: flex;
+        align-items: center;
+        min-height: calc(100% - 1rem);
+        margin: 0.5rem auto;
+        max-width: 500px;
+    }
+    .centered-modal {
+        background-color: rgba(0, 0, 0, 0.5);
+    }
+    @@media (max-width: 576px) {
+        .modal-dialog {
+            margin: 0.5rem;
+            width: calc(100% - 1rem);
+            max-width: none;
+        }
+    }
+</style>
+
+@code {
+    [Parameter]
+    public bool Show { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> ShowChanged { get; set; }
+
+    [Parameter]
+    public string ShareableUrl { get; set; }
+
+    private void CloseModal()
+    {
+        Show = false;
+        ShowChanged.InvokeAsync(false);
+    }
+
+    private async Task CopyToClipboard()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", ShareableUrl);
+            await ToastService.ShowToast("Research Shared", "The share link has been copied to your clipboard.");
+        }
+        catch (Exception)
+        {
+            await ToastService.ShowToast("Share Failed", "Unable to copy the share link. Please try again or manually copy the link: " + ShareableUrl, 8000);
+        }
+    }
+
+    private void CloseModalOnOutsideClick()
+    {
+        CloseModal();
+    }
+}

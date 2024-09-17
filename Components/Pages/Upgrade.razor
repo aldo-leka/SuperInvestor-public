@@ -1,0 +1,96 @@
+﻿@page "/upgrade"
+@using Stripe.Checkout
+@inject IConfiguration Configuration
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Upgrade to SuperInvestor Pro</PageTitle>
+
+<div class="container mt-5">
+    <h1 class="text-center mb-5">Upgrade to SuperInvestor Pro</h1>
+
+    <div class="row mb-5">
+        <div class="col-md-6">
+            <SuperCard Title="Basic">
+                <ul class="list-unstyled">
+                    <li><i class="fas fa-check text-success"></i> Access to financial filings</li>
+                    <li><i class="fas fa-times text-danger"></i> Take notes on filings</li>
+                    <li><i class="fas fa-times text-danger"></i> Share notes with others</li>
+                </ul>
+                <h3 class="text-center mt-4">Free</h3>
+                <button class="btn btn-secondary w-100 mt-3" disabled>Current Plan</button>
+            </SuperCard>
+        </div>
+        <div class="col-md-6">
+            <SuperCard Title="SuperInvestor Pro">
+                <ul class="list-unstyled">
+                    <li><i class="fas fa-check text-success"></i> Access to financial filings</li>
+                    <li><i class="fas fa-check text-success"></i> Take notes on filings</li>
+                    <li><i class="fas fa-check text-success"></i> Share notes with others</li>
+                </ul>
+                <h3 class="text-center mt-4">
+                    <span class="text-muted"><s>$20/month</s></span>
+                    <span class="text-success">$10/month</span>
+                </h3>
+                <p class="text-center text-danger">Limited Time Offer: 50% Off!</p>
+                <button class="btn btn-primary w-100 mt-3" @onclick="Checkout">Upgrade Now</button>
+            </SuperCard>
+        </div>
+    </div>
+
+    <div class="row mb-5">
+        <div class="col-12">
+            <h2 class="text-center mb-4">What Our Pro Users Say</h2>
+            <div class="row">
+                <div class="col-md-4">
+                    <blockquote class="blockquote">
+                        <p>"SuperInvestor Pro has revolutionized how I analyze financial filings. The note-taking feature is a game-changer!"</p>
+                        <footer class="blockquote-footer">Sarah J., Financial Analyst</footer>
+                    </blockquote>
+                </div>
+                <div class="col-md-4">
+                    <blockquote class="blockquote">
+                        <p>"Being able to share my notes with my team has greatly improved our collaboration and decision-making process."</p>
+                        <footer class="blockquote-footer">Michael R., Portfolio Manager</footer>
+                    </blockquote>
+                </div>
+                <div class="col-md-4">
+                    <blockquote class="blockquote">
+                        <p>"The Pro features have saved me countless hours. It's an essential tool for any serious investor."</p>
+                        <footer class="blockquote-footer">Emma L., Individual Investor</footer>
+                    </blockquote>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="text-center mb-5">
+        <h2>Upgrade today and take your investment research to the next level!</h2>
+        <button class="btn btn-primary btn-lg mt-3" @onclick="Checkout">Get SuperInvestor Pro</button>
+    </div>
+</div>
+
+@code {
+    private async Task Checkout()
+    {
+        var domain = NavigationManager.BaseUri;
+        var options = new SessionCreateOptions
+        {
+            LineItems = new List<SessionLineItemOptions>
+            {
+                new()
+                {
+                    Price = Configuration["StripePriceId"],
+                    Quantity = 1,
+                },
+            },
+            Mode = "subscription",
+            SuccessUrl = domain + "OrderComplete",
+            CancelUrl = domain + "OrderAbandoned"
+        };
+
+        var service = new SessionService();
+        var session = await service.CreateAsync(options);
+        NavigationManager.NavigateTo(session.Url);
+    }
+}

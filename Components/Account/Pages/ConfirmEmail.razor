@@ -1,0 +1,69 @@
+﻿@page "/Account/ConfirmEmail"
+
+@using System.Text
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using SuperInvestor.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Confirm Email</PageTitle>
+
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <SuperCard Title="Confirm Email">
+                <StatusMessage Message="@statusMessage" />
+                @if (statusMessage is null)
+                {
+                    <p class="text-center">
+                        <i class="fas fa-spinner fa-spin fa-3x"></i>
+                    </p>
+                    <p class="text-center mt-3">Processing your request...</p>
+                }
+                else
+                {
+                    <div class="d-grid gap-2 mt-4">
+                        <NavLink href="" class="btn btn-primary">Return to Home</NavLink>
+                    </div>
+                }
+            </SuperCard>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string statusMessage;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromQuery]
+    private string UserId { get; set; }
+
+    [SupplyParameterFromQuery]
+    private string Code { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (UserId is null || Code is null)
+        {
+            RedirectManager.RedirectTo("");
+        }
+
+        var user = await UserManager.FindByIdAsync(UserId);
+        if (user is null)
+        {
+            HttpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            statusMessage = $"Error: Unable to load user with ID '{UserId}'.";
+            return;
+        }
+
+        var code = Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(Code));
+        var result = await UserManager.ConfirmEmailAsync(user, code);
+        statusMessage = result.Succeeded 
+            ? "Thank you for confirming your email. Your account is now active."
+            : "Error: We encountered an issue while confirming your email. Please try again or contact support.";
+    }
+}

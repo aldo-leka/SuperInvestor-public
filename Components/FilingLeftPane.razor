@@ -1,0 +1,188 @@
+﻿@using Microsoft.EntityFrameworkCore
+
+@implements IDisposable
+
+@inject NavigationManager NavigationManager
+@inject ShareService ShareService
+@inject IJSRuntime JSRuntime
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject UserService UserService
+@inject ToastService ToastService
+@inject NoteService NoteService
+@inject FilingCategoryService FilingCategoryService
+@inject ResearchService ResearchService
+
+<ShareResearchModal @bind-Show="showShareModal" ShareableUrl="@shareableUrl" />
+
+<SuperCard Title="Filing Information">
+    <div class="mb-3">
+        <h5 class="mb-2">@Ticker.Symbol</h5>
+        <p class="mb-1"><strong>Company:</strong> @Submission.Name</p>
+        <p class="mb-1"><strong>Filing:</strong> @Filing</p>
+        <p class="mb-1"><strong>Filed On:</strong> @FiledOn</p>
+    </div>
+    <div class="mb-3">
+        <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="fontSizeToggle" @bind="isLargeFont" @bind:after="ToggleFontSize">
+            <label class="form-check-label" for="fontSizeToggle">Large Font Size</label>
+        </div>
+    </div>
+    <div class="mb-3">
+        <h6>Recent Filings</h6>
+        <div class="list-group">
+            @foreach (var recentFiling in GetRecentFilings())
+            {
+                <a href="@($"/companies/{Ticker.Symbol}/{recentFiling.AccessionNumber}")" 
+                   class="list-group-item list-group-item-action @(recentFiling.AccessionNumber == AccessionNumber ? "active" : "")">
+                    <div class="d-flex w-100 justify-content-between">
+                        <h6 class="mb-1">@recentFiling.Form</h6>
+                        <small>@recentFiling.FilingDate</small>
+                    </div>
+                </a>
+            }
+        </div>
+    </div>
+    <div>
+        <SuperButton OnClick="@(() => NavigationManager.NavigateTo($"/companies/{Ticker.Symbol}"))" CssClass="mb-2 me-2">
+            Back to Company
+        </SuperButton>
+        @if (!ReadOnly)
+        {
+            <SuperButton OnClick="@(() => CopyCurrentUrl())" Type="ButtonType.Outline" CssClass="mb-2 me-2">
+                Share Filing
+            </SuperButton>
+            @if (hasNotes)
+            {
+                <SuperButton OnClick="@(() => ShareResearch())" Type="ButtonType.Outline" CssClass="mb-2">
+                    Share Research
+                </SuperButton>
+            }
+        }
+        else if (showContinueResearchButton)
+        {
+            <SuperButton OnClick="@(() => NavigationManager.NavigateTo($"/companies/{Ticker.Symbol}/{AccessionNumber}"))" Type="ButtonType.Outline" CssClass="mb-2">
+                @(hasNotes ? "Continue Research" : "Start Research")
+            </SuperButton>
+        }
+    </div>
+</SuperCard>
+
+@code {
+    [Parameter] public Ticker Ticker { get; set; }
+    [Parameter] public Submission Submission { get; set; }
+    [Parameter] public string Filing { get; set; }
+    [Parameter] public string FiledOn { get; set; }
+    [Parameter] public string AccessionNumber { get; set; }
+
+    // read-only parameters
+    [Parameter] public bool ReadOnly { get; set; }
+    [Parameter] public string ResearchShortId { get; set; }
+
+    private bool showShareModal = false;
+    private bool hasNotes = false;
+    private string shareableUrl;
+    private bool showContinueResearchButton;
+
+    [Parameter] public EventCallback<bool> OnFontSizeToggle { get; set; }
+
+    private bool isLargeFont;
+
+    protected override void OnInitialized()
+    {
+        NoteService.NotesChanged += OnNotesChanged;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await CheckHasNotes();
+
+        if (ReadOnly)
+        {
+            var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            if (auth.User.Identity.IsAuthenticated)
+            {
+                var user = await UserService.GetUser();
+                var research = await ResearchService.GetResearch(ResearchShortId);
+                if (research.UserId == user.Id)
+                {
+                    showContinueResearchButton = true;
+                }
+            }
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            isLargeFont = await JSRuntime.InvokeAsync<bool>("getFilingFontSizePreference");
+            StateHasChanged();
+        }
+    }
+
+    private async void OnNotesChanged(object sender, string changedAccessionNumber)
+    {
+        if (changedAccessionNumber == AccessionNumber)
+        {
+            await CheckHasNotes();
+            StateHasChanged();
+        }
+    }
+
+    private async Task CheckHasNotes()
+    {
+        var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        if (auth.User.Identity.IsAuthenticated)
+        {
+            var user = await UserService.GetUser();
+            hasNotes = await NoteService.HasNotesForFiling(user.Id, Ticker.Symbol, AccessionNumber);
+        }
+    }
+
+    private List<Models.Filing> GetRecentFilings()
+    {
+        if (Submission?.Filings?.Recent == null)
+        {
+            return new List<Models.Filing>();
+        }
+
+        var categorizedFilings = FilingCategoryService.CategorizeFilings(Submission);
+        var currentFilingCategory = FilingCategoryService.GetFilingCategory(Filing);
+
+        return categorizedFilings
+            .Where(f => f.Category == currentFilingCategory)
+            .OrderByDescending(f => f.FilingDate)
+            .Take(5)
+            .ToList();
+    }
+
+    private async Task CopyCurrentUrl()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", NavigationManager.Uri);
+            await ToastService.ShowToast("Link Shared", "The share link has been copied to your clipboard.");
+        }
+        catch (Exception)
+        {
+            await ToastService.ShowToast("Share Failed", "Unable to copy the share link. Please try again or manually copy the link: " + NavigationManager.Uri, 8000);
+        }
+    }
+
+    private async Task ShareResearch()
+    {
+        var user = await UserService.GetUser();
+        shareableUrl = await ShareService.GenerateShareLinkForResearch(user.Id, Ticker.Symbol, AccessionNumber);
+        showShareModal = true;
+    }
+
+    private async Task ToggleFontSize()
+    {
+        await OnFontSizeToggle.InvokeAsync(isLargeFont);
+    }
+
+    public void Dispose()
+    {
+        NoteService.NotesChanged -= OnNotesChanged;
+    }
+}

@@ -1,0 +1,230 @@
+﻿@page "/companies/{ticker}/{accessionNumber}"
+
+@using HtmlAgilityPack
+@using Microsoft.Net.Http.Headers
+
+@implements IAsyncDisposable
+
+@inject IJSRuntime JSRuntime
+@inject NavigationManager NavigationManager
+@inject HtmlCleanerService HtmlCleaner
+@inject FilingEventService FilingEventService
+@inject NoteHighlightService NoteHighlightService
+@inject CompanyTickerService CompanyTickerService
+
+<PageTitle>@(isLoading ? "Loading..." : $"{filing} - {ticker?.Symbol} Filing")</PageTitle>
+
+<div class="container-fluid mt-4">
+    <div class="@(isSmallScreen ? "d-flex flex-column" : "row")">
+        <div class="@(isSmallScreen ? "mb-3" : "col-lg-3 order-1 order-lg-1 mb-3")">
+            @if (isLoading)
+            {
+                <FilingLeftPaneSkeleton />
+            }
+            else
+            {
+                <FilingLeftPane Ticker="@ticker"
+                                AccessionNumber="@AccessionNumber"
+                                Submission="@submission"
+                                Filing="@filing"
+                                FiledOn="@filedOn"
+                                OnFontSizeToggle="HandleFontSizeToggle" />
+            }
+        </div>
+        <div class="@(isSmallScreen ? "mb-3" : "col-lg-6 order-2 order-lg-2 mb-3")">
+            <SuperCard Id="content-card">
+                @if (isLoading)
+                {
+                    <FilingContentSkeleton />
+                }
+                else
+                {
+                    <div id="content" class="filing-content">
+                        @((MarkupString)htmlString)
+                    </div>
+                }
+            </SuperCard>
+        </div>
+        <div class="@(isSmallScreen ? "mb-3" : "col-lg-3 order-3 order-lg-3")">
+            @if (isLoading)
+            {
+                <NotesSkeleton />
+            }
+            else
+            {
+                <div id="notes-container">
+                    <Notes Ticker="@Ticker"
+                           AccessionNumber="@AccessionNumber"
+                           HighlightNote="HighlightNote"
+                           ClearNoteHighlight="ClearNoteHighlight" />
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public string Ticker { get; set; }
+
+    [Parameter]
+    public string AccessionNumber { get; set; }
+
+    private string htmlString;
+    private Submission submission;
+    private string filing;
+    private string filedOn;
+    private Ticker ticker;
+    private bool isLoading = true;
+    private bool modulesInitialized;
+    private DotNetObjectReference<Filing> objRef;
+    private bool isSmallScreen = false;
+
+    protected override void OnInitialized()
+    {
+        objRef = DotNetObjectReference.Create(this);
+
+        NoteHighlightService.HighlightRequested += HighlightNote;
+        NoteHighlightService.HoverHighlightRequested += HoverHighlightNote;
+        NoteHighlightService.ClearHoverHighlightRequested += ClearHoverHighlightNote;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading = true;
+        modulesInitialized = false;
+
+        ticker = await CompanyTickerService.GetTickerBySymbolAsync(Ticker);
+        if (ticker is not null)
+        {
+            using var client = new HttpClient();
+            client.DefaultRequestHeaders.TryAddWithoutValidation(HeaderNames.UserAgent, "Lekasoft aldo@lekasoft.com");
+            client.Timeout = TimeSpan.FromSeconds(30); // Set a timeout
+
+            var cik = ticker.Cik.ToString().PadLeft(10, '0');
+            var submissionUrl = $"https://data.sec.gov/submissions/CIK{cik}.json";
+            submission = await client.GetFromJsonAsync<Submission>(submissionUrl);
+
+            var filingIndex = submission.Filings.Recent.AccessionNumber.ToList().IndexOf(AccessionNumber);
+            if (filingIndex < 0)
+            {
+                NavigationManager.NavigateTo("Error/404");
+                return;
+            }
+
+            filing = submission.Filings.Recent.Form[filingIndex];
+            filedOn = submission.Filings.Recent.FilingDate[filingIndex];
+            var document = submission.Filings.Recent.PrimaryDocument[filingIndex];
+
+            var baseUrl = "https://www.sec.gov/Archives/edgar/data/";
+            var secUri = new Uri($"{baseUrl}{cik}/{AccessionNumber.Replace("-", "")}/{document}");
+            var htmlResponse = await client.GetStringAsync(secUri);
+
+            var htmlDocument = new HtmlDocument();
+            htmlDocument.LoadHtml(htmlResponse);
+            HtmlCleaner.CleanHtmlDocument(htmlDocument, secUri);
+
+            htmlString = htmlDocument.DocumentNode.OuterHtml
+                .Replace("\n", "")
+                .Replace("\r", "")
+                .Trim();
+        }
+        else
+        {
+            NavigationManager.NavigateTo("Error/404");
+        }
+
+        isLoading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            isSmallScreen = await JSRuntime.InvokeAsync<bool>("isSmallScreen");
+            await JSRuntime.InvokeVoidAsync("addResizeListener", DotNetObjectReference.Create(this));
+        }
+
+        if (!isLoading && !modulesInitialized)
+        {
+            await JSRuntime.InvokeVoidAsync("highlighting.initialize", objRef);
+            await JSRuntime.InvokeVoidAsync("initializeFilingFontSizes");
+
+            // Apply the saved font size preference
+            await JSRuntime.InvokeVoidAsync("applyFilingFontSize");
+
+            NoteHighlightService.NotifyFilingContentReady();
+            modulesInitialized = true;
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnWindowResize()
+    {
+        var newIsSmallScreen = await JSRuntime.InvokeAsync<bool>("isSmallScreen");
+        if (newIsSmallScreen != isSmallScreen)
+        {
+            isSmallScreen = newIsSmallScreen;
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public void TextSelected(string selectedText, int startIndex, int endIndex)
+    {
+        FilingEventService.OnTextSelected(startIndex, endIndex, selectedText);
+    }
+
+    [JSInvokable]
+    public void TextUnselected()
+    {
+        FilingEventService.OnTextUnselected();
+    }
+
+    [JSInvokable]
+    public void OpenMobileNoteMenu(string noteId)
+    {
+        FilingEventService.OnMobileNoteMenuOpened(noteId);
+    }
+
+    [JSInvokable]
+    public void MobileTextSelected(string selectedText, int startIndex, int endIndex)
+    {
+        FilingEventService.OnMobileTextSelected(startIndex, endIndex, selectedText);
+    }
+
+    public async Task HighlightNote(int startIndex, int endIndex, string noteId)
+    {
+        await JSRuntime.InvokeVoidAsync("highlighting.highlightNote", noteId, startIndex, endIndex);
+    }
+
+    public async Task ClearNoteHighlight(string noteId)
+    {
+        await JSRuntime.InvokeVoidAsync("highlighting.clearNoteHighlight", noteId);
+    }
+
+    public async Task HoverHighlightNote(int startIndex, int endIndex, string noteId)
+    {
+        await JSRuntime.InvokeVoidAsync("highlighting.applyHoverHighlight", noteId, startIndex, endIndex);
+    }
+
+    public async Task ClearHoverHighlightNote(string noteId)
+    {
+        await JSRuntime.InvokeVoidAsync("highlighting.clearHoverHighlight", noteId);
+    }
+
+    private async Task HandleFontSizeToggle(bool isLargeFont)
+    {
+        await JSRuntime.InvokeVoidAsync("toggleFilingFontSize", isLargeFont);
+        await JSRuntime.InvokeVoidAsync("notesLayout.updateNotesLayout");
+    }
+
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        await JSRuntime.InvokeVoidAsync("removeResizeListener", DotNetObjectReference.Create(this));
+        await JSRuntime.InvokeVoidAsync("highlighting.dispose");
+        NoteHighlightService.HighlightRequested -= HighlightNote;
+        NoteHighlightService.HoverHighlightRequested -= HoverHighlightNote;
+        NoteHighlightService.ClearHoverHighlightRequested -= ClearHoverHighlightNote;
+    }
+}

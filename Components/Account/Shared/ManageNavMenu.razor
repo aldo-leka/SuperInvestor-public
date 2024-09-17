@@ -1,0 +1,21 @@
+﻿@using Microsoft.AspNetCore.Identity
+@using SuperInvestor.Data
+
+@inject SignInManager<ApplicationUser> SignInManager
+@inject UserService UserService
+@inject SubscriptionService SubscriptionService
+
+<ul class="nav nav-pills flex-column">
+    <li class="nav-item">
+        <NavLink class="nav-link" href="Account/Manage" Match="NavLinkMatch.All">Profile</NavLink>
+    </li>
+    <li class="nav-item">
+        <NavLink class="nav-link" href="Account/Manage/Email">Email</NavLink>
+    </li>
+    <li class="nav-item">
+        <NavLink class="nav-link" href="Account/Manage/ChangePassword">Password</NavLink>
+    </li>
+    <li class="nav-item">
+        <NavLink class="nav-link" href="Account/Manage/Subscription">Subscription & Billing</NavLink>
+    </li>
+</ul>

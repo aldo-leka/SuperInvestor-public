@@ -1,0 +1,462 @@
+﻿@using Microsoft.AspNetCore.Identity
+
+@inject IJSRuntime JSRuntime
+@inject FilingEventService FilingEventService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject UserService UserService
+@inject NoteHighlightService NoteHighlightService
+@inject ShareService ShareService
+@inject ToastService ToastService
+@inject NoteService NoteService
+@inject ResearchService ResearchService
+@inject SubscriptionService SubscriptionService
+@inject NavigationManager NavigationManager
+
+@implements IAsyncDisposable
+
+@*
+    If from filing && user logged out -> Login & Register links
+    If from filing && user logged in && not paying user -> Upgrade link
+    If from filing && user logged in && paying user -> Enable adding notes
+    If from research (ReadOnly true) -> Show read-only notes
+*@
+
+@if (!ReadOnly && user is null)
+{
+    <div id="notes-area" class="alert alert-info">
+        <h4 class="alert-heading">Unlock the Power of Financial Analysis</h4>
+        <p>As a registered user, you can take notes directly on financial filings, helping you make more informed investment decisions.</p>
+        <hr>
+        <p class="mb-0">
+            <a href="Account/Register" class="btn btn-primary">Register Now</a>
+            <span class="ms-2">or</span>
+            <a href="Account/Login" class="btn btn-outline-primary ms-2">Log In</a>
+        </p>
+    </div>
+}
+else if (!ReadOnly && !hasActiveSubscription)
+{
+    <div id="notes-area" class="alert alert-info" role="alert">
+        <h4 class="alert-heading">Unlock the Power of Advanced Research!</h4>
+        <p>You're just one step away from supercharging your investment analysis. Upgrade to SuperInvestor Pro to:</p>
+        <ul>
+            <li>Take unlimited notes on financial filings</li>
+            <li>Share your insights with colleagues</li>
+            <li>Access advanced analytics tools</li>
+        </ul>
+        <hr>
+        <p class="mb-0">
+            Don't miss out on game-changing features that could transform your investment strategy.
+        </p>
+        <SuperButton OnClick="@(() => NavigationManager.NavigateTo("upgrade"))" CssClass="btn btn-primary mt-3">
+            Upgrade to Pro Now
+        </SuperButton>
+    </div>
+}
+else
+{
+    @if (isSmallScreen)
+    {
+        <MobileNoteMenu 
+            IsOpen="@isMobileMenuOpen"
+            IsOpenChanged="@((value) => { isMobileMenuOpen = value; StateHasChanged(); })"
+            UserName="@userName"
+            CurrentNote="@currentMobileNote"
+            AllNotes="@notes"
+            OnEdit="@EditNote"
+            OnDelete="@DeleteNote"
+            OnShare="@ShareNote"
+            OnNoteSelected="@HandleNoteClick"
+            OnAdd="@AddNote"
+            ReadOnly = "@ReadOnly"
+        />
+    }
+    else
+    {
+        <div id="notes-area" style="position: relative; width: 100%;">
+            @foreach (var note in notes)
+            {
+                <NoteCard Note="@note"
+                          UserName="@userName"
+                          OnEdit="@EditNote"
+                          OnDelete="@DeleteNote"
+                          OnToggleShowMore="@ToggleShowMore"
+                          OnAskDeleteChange="@HandleAskDeleteChange"
+                          OnHover="@HandleNoteHover"
+                          OnHoverEnd="@HandleNoteHoverEnd"
+                          OnShare="@ShareNote"
+                          OnNoteClick="@HandleNoteClick"
+                          ReadOnly="@ReadOnly" />
+            }
+
+            @if (showAddNoteButton)
+            {
+                <SuperButton id="add-note-button" OnClick="@OpenAddNoteCard" IconClass="fas fa-plus" CssClass="me-2" style="position: absolute;">
+                    Add Note
+                </SuperButton>
+            }
+
+            @if (showAddNoteCard)
+            {
+                <NoteCard IsNewNote="true"
+                          UserName="@userName"
+                          OnAdd="AddNote"
+                          OnCancel="CancelAddNoteCard" />
+            }
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string Ticker { get; set; }
+    [Parameter] public string AccessionNumber { get; set; }
+    [Parameter] public Func<int, int, string, Task> HighlightNote { get; set; }
+    [Parameter] public Func<string, Task> ClearNoteHighlight { get; set; }
+
+    // read-only parameters
+    // ReadOnly = true when coming from shared Research.razor and false from Filing.razor.
+    [Parameter] public bool ReadOnly { get; set; }
+    [Parameter] public string ResearchShortId { get; set; }
+    [Parameter] public string NoteShortId { get; set; }
+
+    private List<NoteViewModel> notes = new List<NoteViewModel>();
+    private bool showAddNoteButton = false;
+    private bool showAddNoteCard = false;
+    private int currentStartIndex;
+    private int currentEndIndex;
+    private string currentSelectedText;
+    private bool updateNotesLayout = false;
+    private ApplicationUser user;
+    private string userName;
+    private DotNetObjectReference<Notes> objRef;
+    private bool hasActiveSubscription = false;
+    private bool isSmallScreen = false;
+    private bool isMobileMenuOpen;
+    private NoteViewModel currentMobileNote;
+    private int currentMobileStartIndex;
+    private int currentMobileEndIndex;
+    private string currentMobileSelectedText;
+
+    private bool notesInitialized = false;
+    private bool filingContentReady = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        FilingEventService.TextSelected += HandleTextSelected;
+        FilingEventService.TextUnselected += HandleTextUnselected;
+        FilingEventService.MobileNoteMenuOpened += OpenMobileNoteMenu;
+        FilingEventService.MobileTextSelected += HandleMobileTextSelected;
+        NoteHighlightService.FilingContentReady += HandleFilingContentReady;
+        objRef = DotNetObjectReference.Create(this);
+
+        if (!ReadOnly)
+        {
+            var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            if (auth.User.Identity.IsAuthenticated)
+            {
+                user = await UserService.GetUser();
+                userName = user.Name ?? user.Email;
+                hasActiveSubscription = await SubscriptionService.HasActiveSubscription(user);
+                if (hasActiveSubscription)
+                {
+                    notes = (await NoteService.GetNotes(user.Id, Ticker, AccessionNumber))
+                        .Select(n => new NoteViewModel
+                            {
+                                Id = n.Id.ToString(),
+                                ShortId = n.ShortId,
+                                FullText = n.Text,
+                                Date = n.UpdatedAt,
+                                StartIndex = n.StartIndex,
+                                EndIndex = n.EndIndex
+                            })
+                        .ToList();
+                }
+            }
+        }
+        else
+        {
+            var research = await ResearchService.GetResearch(ResearchShortId);
+            notes = (await NoteService.GetNotes(research.UserId, research.Ticker, research.AccessionNumber))
+                .Select(n => new NoteViewModel
+                    {
+                        Id = n.Id.ToString(),
+                        ShortId = n.ShortId,
+                        FullText = n.Text,
+                        Date = n.UpdatedAt,
+                        StartIndex = n.StartIndex,
+                        EndIndex = n.EndIndex,
+                    }).ToList();
+
+            if (!string.IsNullOrEmpty(NoteShortId))
+            {
+                notes = notes.Where(n => n.ShortId == NoteShortId).ToList();
+            }
+
+            var user = await UserService.GetUser(research.UserId);
+            userName = user?.Name;
+        }
+
+        notesInitialized = true;
+        CheckAndHighlightInitialNotes();
+    }
+
+    private void HandleFilingContentReady()
+    {
+        filingContentReady = true;
+        CheckAndHighlightInitialNotes();
+    }
+
+    private async void CheckAndHighlightInitialNotes()
+    {
+        if (notesInitialized && filingContentReady)
+        {
+            await HighlightInitialNotes();
+        }
+    }
+
+    private async Task HighlightInitialNotes()
+    {
+        foreach (var note in notes)
+        {
+            await NoteHighlightService.RequestHighlight(note.StartIndex, note.EndIndex, note.ShortId);
+        }
+
+        if (!string.IsNullOrEmpty(NoteShortId) && notes.Any())
+        {
+            await ScrollToNote(NoteShortId, isSmallScreen ? "start" : "center");
+        }
+
+        updateNotesLayout = true;
+        StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JSRuntime.InvokeVoidAsync("resizing.initialize", objRef);
+            isSmallScreen = await JSRuntime.InvokeAsync<bool>("isSmallScreen");
+            StateHasChanged();
+        }
+
+        if (updateNotesLayout)
+        {
+            await JSRuntime.InvokeVoidAsync("notesLayout.updateNotesLayout");
+            updateNotesLayout = false;
+        }
+    }
+
+    private void HandleTextSelected(int startIndex, int endIndex, string selectedText)
+    {
+        if (!string.IsNullOrWhiteSpace(selectedText))
+        {
+            currentStartIndex = startIndex;
+            currentEndIndex = endIndex;
+            currentSelectedText = selectedText;
+
+            showAddNoteButton = true;
+        }
+        else
+        {
+            showAddNoteButton = false;
+        }
+
+        updateNotesLayout = true;
+        StateHasChanged();
+    }
+
+    private void HandleTextUnselected()
+    {
+        showAddNoteButton = false;
+        showAddNoteCard = false;
+        updateNotesLayout = true;
+
+        StateHasChanged();
+    }
+
+    private void OpenAddNoteCard()
+    {
+        showAddNoteButton = false;
+        showAddNoteCard = true;
+        updateNotesLayout = true;
+
+        StateHasChanged();
+    }
+
+    private async Task AddNote(string noteText)
+    {
+        var newNote = await NoteService.AddNote(user.Id, Ticker, AccessionNumber, noteText, currentStartIndex, currentEndIndex);
+
+        var newNoteViewModel = new NoteViewModel
+            {
+                Id = newNote.Id.ToString(),
+                ShortId = newNote.ShortId,
+                FullText = noteText,
+                Date = newNote.UpdatedAt,
+                StartIndex = currentStartIndex,
+                EndIndex = currentEndIndex
+            };
+
+        notes.Add(newNoteViewModel);
+        showAddNoteCard = false;
+        showAddNoteButton = false;
+        updateNotesLayout = true;
+
+        await HighlightNote(currentStartIndex, currentEndIndex, newNoteViewModel.ShortId);
+
+        // apparently setting updateNotesLayout = true isn't enough, hopefully this works.
+        await JSRuntime.InvokeVoidAsync("notesLayout.updateNotesLayout");
+
+        StateHasChanged();
+    }
+
+    private async Task EditNote(NoteViewModel noteViewModel)
+    {
+        if (await NoteService.UpdateNote(Guid.Parse(noteViewModel.Id), noteViewModel.FullText))
+        {
+            var index = notes.FindIndex(n => n.Id == noteViewModel.Id);
+            if (index != -1)
+            {
+                notes[index] = noteViewModel;
+                updateNotesLayout = true;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task DeleteNote(NoteViewModel noteViewModel)
+    {
+        if (await NoteService.DeleteNote(Guid.Parse(noteViewModel.Id)))
+        {
+            notes.RemoveAll(n => n.Id == noteViewModel.Id);
+            updateNotesLayout = true;
+            await ClearNoteHighlight(noteViewModel.ShortId);
+
+            StateHasChanged();
+        }
+    }
+
+    private void CancelAddNoteCard()
+    {
+        showAddNoteCard = false;
+        showAddNoteButton = true;
+        updateNotesLayout = true;
+        StateHasChanged();
+    }
+
+    private void ToggleShowMore(NoteViewModel note)
+    {
+        var index = notes.FindIndex(n => n.Id == note.Id);
+        if (index != -1)
+        {
+            notes[index].ShowMore = !notes[index].ShowMore;
+            updateNotesLayout = true;
+            StateHasChanged();
+        }
+    }
+
+    private void HandleAskDeleteChange(bool askDelete)
+    {
+        updateNotesLayout = true;
+        StateHasChanged();
+    }
+
+    private async Task HandleNoteHover(NoteViewModel note)
+    {
+        await NoteHighlightService.RequestHoverHighlight(note.StartIndex, note.EndIndex, note.ShortId);
+    }
+
+    private async Task HandleNoteHoverEnd(NoteViewModel note)
+    {
+        await NoteHighlightService.RequestClearHoverHighlight(note.ShortId);
+    }
+
+    private async Task HandleWindowResize()
+    {
+        foreach (var note in notes)
+        {
+            var initialNoteLength = await JSRuntime.InvokeAsync<int>("notesLayout.calculateInitialNoteLength", note.ShortId);
+            note.ResetTextFields(initialNoteLength);
+        }
+
+        await JSRuntime.InvokeVoidAsync("notesLayout.updateNotesLayout");
+
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task OnWindowResize()
+    {
+        isSmallScreen = await JSRuntime.InvokeAsync<bool>("isSmallScreen");
+        await HandleWindowResize();
+        StateHasChanged();
+    }
+
+    private async Task ShareNote(NoteViewModel note)
+    {
+        var shareLink = await ShareService.GenerateShareLinkForNote(Guid.Parse(note.Id));
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", shareLink);
+            await ToastService.ShowToast("Note Shared", "The share link has been copied to your clipboard.");
+        }
+        catch (Exception)
+        {
+            await ToastService.ShowToast("Share Failed", "Unable to copy the share link. Please try again or manually copy the link: " + shareLink, 8000);
+        }
+    }
+
+    private async Task ScrollToNote(string noteShortId, string scrollPosition = "start")
+    {
+        var note = notes.FirstOrDefault(n => n.ShortId == noteShortId);
+        if (note != null)
+        {
+            await JSRuntime.InvokeVoidAsync("highlighting.scrollToNote", note.ShortId, scrollPosition);
+            if (isSmallScreen)
+            {
+                currentMobileNote = note;
+                isMobileMenuOpen = true;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task HandleNoteClick(NoteViewModel note)
+    {
+        if (isSmallScreen)
+        {
+            await ScrollToNote(note.ShortId);
+            currentMobileNote = note;
+            isMobileMenuOpen = true;
+            StateHasChanged();
+        }
+    }
+
+    private void OpenMobileNoteMenu(string noteShortId)
+    {
+        currentMobileNote = notes.FirstOrDefault(n => n.ShortId == noteShortId);
+        isMobileMenuOpen = true;
+        StateHasChanged();
+    }
+
+    private void HandleMobileTextSelected(int startIndex, int endIndex, string selectedText)
+    {
+        // TODO Maybe later...
+        // currentMobileNote = null;
+        // currentMobileStartIndex = startIndex;
+        // currentMobileEndIndex = endIndex;
+        // currentMobileSelectedText = selectedText;
+        // isMobileMenuOpen = true;
+        // StateHasChanged();
+    }
+
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        FilingEventService.TextSelected -= HandleTextSelected;
+        FilingEventService.TextUnselected -= HandleTextUnselected;
+        FilingEventService.MobileNoteMenuOpened -= OpenMobileNoteMenu;
+        FilingEventService.MobileTextSelected -= HandleMobileTextSelected;
+        NoteHighlightService.FilingContentReady -= HandleFilingContentReady;
+        await JSRuntime.InvokeVoidAsync("resizing.dispose");
+    }
+}

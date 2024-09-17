@@ -1,0 +1,42 @@
+﻿@using Microsoft.AspNetCore.Components.Web
+
+<button @attributes="AdditionalAttributes" class="@ComputedCssClass" @onclick="OnClick">
+    @if (!string.IsNullOrEmpty(IconClass))
+    {
+        <i class="@IconClass me-2"></i>
+    }
+    @ChildContent
+</button>
+
+@code {
+    [Parameter] public RenderFragment ChildContent { get; set; }
+    [Parameter] public EventCallback<MouseEventArgs> OnClick { get; set; }
+    [Parameter] public string CssClass { get; set; } = "";
+    [Parameter] public ButtonType Type { get; set; } = ButtonType.Primary;
+    [Parameter] public string IconClass { get; set; } = "";
+
+    [Parameter(CaptureUnmatchedValues = true)]
+    public Dictionary<string, object> AdditionalAttributes { get; set; }
+
+    private string ComputedCssClass => $"btn {GetButtonTypeClass()} {CssClass}".Trim();
+
+    private string GetButtonTypeClass()
+    {
+        return Type switch
+        {
+            ButtonType.Primary => "btn-primary",
+            ButtonType.Secondary => "btn-secondary",
+            ButtonType.Outline => "btn-outline-primary",
+            ButtonType.Link => "btn-link",
+            _ => "btn-primary"
+        };
+    }
+
+    public enum ButtonType
+    {
+        Primary,
+        Secondary,
+        Outline,
+        Link
+    }
+}

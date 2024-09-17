@@ -1,0 +1,199 @@
+﻿@inject IJSRuntime JSRuntime
+
+<div class="card mb-3 w-100 @(IsNewNote ? "border-primary add-note-card" : "note-card")"
+     data-note-card-id="@(IsNewNote ? null : Note.ShortId)"
+     data-start-index="@(IsNewNote ? null : Note.StartIndex)"
+     data-end-index="@(IsNewNote ? null : Note.EndIndex)"
+     style="position: absolute; left: 0; right: 0;"
+     @onmouseenter="@(() => HandleHover(true))"
+     @onmouseleave="@(() => HandleHover(false))"
+     @onclick="@HandleNoteClick">
+    <div class="card-body">
+        @if (IsNewNote || Note.Edit)
+        {
+            <EditForm Model="@editedNote" OnValidSubmit="@HandleSubmit">
+                <DataAnnotationsValidator />
+                <div class="mb-3">
+                    <InputTextArea @bind-Value="editedNote.FullText" class="form-control" rows="3" @oninput="OnInput" id="@textAreaId" />
+                    <ValidationMessage For="@(() => editedNote.FullText)" />
+                </div>
+                <div class="d-flex justify-content-end">
+                    <SuperButton Type="ButtonType.Secondary" OnClick="@HandleCancel" CssClass="me-2">Cancel</SuperButton>
+                    <SuperButton Type="ButtonType.Primary">Save</SuperButton>
+                </div>
+            </EditForm>
+        }
+        else
+        {
+            <p class="card-text preserve-whitespace">@(Note.ShowMore ? Note.FullText : Note.InitialText)</p>
+            @if (!string.IsNullOrEmpty(UserName))
+            {
+                <p class="card-text"><small class="text-muted">By: @UserName</small></p>
+            }
+            @if (!string.IsNullOrEmpty(Note.AdditionalText))
+            {
+                <SuperButton Type="ButtonType.Link" OnClick="@((e) => HandleInnerButtonClick(() => OnToggleShowMore.InvokeAsync(Note)))">
+                    @(Note.ShowMore ? "Show Less" : "Show More")
+                </SuperButton>
+            }
+            <div class="d-flex justify-content-between align-items-center mt-2">
+                <small class="text-muted">@Note.Date.ToLocalTime().ToString("g")</small>
+                @if (!ReadOnly)
+                {
+                    <div>
+                        <SuperButton Type="ButtonType.Link" OnClick="@((e) => HandleInnerButtonClick(() => { Note.Edit = true; StateHasChanged(); }))" IconClass="fas fa-edit">Edit</SuperButton>
+                        <SuperButton Type="ButtonType.Link" OnClick="@((e) => HandleInnerButtonClick(HandleDeleteClick))" IconClass="fas fa-trash-alt" CssClass="text-danger">Delete</SuperButton>
+                        <SuperButton Type="ButtonType.Link" OnClick="@((e) => HandleInnerButtonClick(ShareNote))" IconClass="fas fa-share-alt">Share</SuperButton>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+    @if (!IsNewNote && Note.AskDelete)
+    {
+        <div class="card-footer bg-danger text-white">
+            <p>Are you sure you want to delete this note?</p>
+            <div class="d-flex justify-content-end">
+                <SuperButton Type="ButtonType.Secondary" OnClick="@((e) => HandleInnerButtonClick(() => { Note.AskDelete = false; StateHasChanged(); }))" CssClass="me-2">Cancel</SuperButton>
+                <SuperButton Type="ButtonType.Primary" OnClick="@((e) => HandleInnerButtonClick(() => OnDelete.InvokeAsync(Note)))">Confirm Delete</SuperButton>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public NoteViewModel Note { get; set; }
+    [Parameter] public string UserName { get; set; }
+    [Parameter] public bool IsNewNote { get; set; }
+    [Parameter] public EventCallback<NoteViewModel> OnEdit { get; set; }
+    [Parameter] public EventCallback<NoteViewModel> OnDelete { get; set; }
+    [Parameter] public EventCallback<NoteViewModel> OnToggleShowMore { get; set; }
+    [Parameter] public EventCallback<string> OnAdd { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public EventCallback<bool> OnAskDeleteChange { get; set; }
+    [Parameter] public EventCallback<NoteViewModel> OnHover { get; set; }
+    [Parameter] public EventCallback<NoteViewModel> OnHoverEnd { get; set; }
+    [Parameter] public EventCallback<NoteViewModel> OnShare { get; set; }
+    [Parameter] public bool ReadOnly { get; set; }
+    [Parameter] public EventCallback<NoteViewModel> OnNoteClick { get; set; }
+
+    private NoteViewModel editedNote = new();
+
+    private bool isHovered = false;
+
+    private string textAreaId = Guid.NewGuid().ToString();
+
+    protected override void OnParametersSet()
+    {
+        if (!IsNewNote && Note == null)
+        {
+            throw new ArgumentNullException(nameof(Note), "Note cannot be null when IsNewNote is false.");
+        }
+
+        if (Note != null)
+        {
+            editedNote = new NoteViewModel
+                {
+                    Id = Note.Id,
+                    FullText = Note.FullText
+                };
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            if (!IsNewNote)
+            {
+                var initialNoteLength = await JSRuntime.InvokeAsync<int>("notesLayout.calculateInitialNoteLength", Note.ShortId);
+                Note.ResetTextFields(initialNoteLength);
+                StateHasChanged();
+            }
+            await AutoExpandTextArea();
+        }
+    }
+
+    private async Task OnInput(ChangeEventArgs e)
+    {
+        await AutoExpandTextArea();
+    }
+
+    private async Task AutoExpandTextArea()
+    {
+        await JSRuntime.InvokeVoidAsync("autoExpand.initialize", textAreaId);
+    }
+
+    private async Task HandleSubmit()
+    {
+        if (IsNewNote)
+        {
+            await OnAdd.InvokeAsync(editedNote.FullText);
+        }
+        else
+        {
+            Note.FullText = editedNote.FullText;
+            Note.Edit = false;
+            await OnEdit.InvokeAsync(Note);
+        }
+    }
+
+    private async Task HandleCancel()
+    {
+        if (IsNewNote)
+        {
+            await OnCancel.InvokeAsync();
+        }
+        else
+        {
+            Note.Edit = false;
+        }
+    }
+
+    private async Task HandleDeleteClick()
+    {
+        Note.AskDelete = true;
+        await OnAskDeleteChange.InvokeAsync(true);
+    }
+
+    private void HandleHover(bool hovering)
+    {
+        if (!IsNewNote && !Note.Edit && hovering != isHovered)
+        {
+            isHovered = hovering;
+            if (hovering)
+            {
+                OnHover.InvokeAsync(Note);
+            }
+            else
+            {
+                OnHoverEnd.InvokeAsync(Note);
+            }
+        }
+    }
+
+    private async Task ShareNote()
+    {
+        await OnShare.InvokeAsync(Note);
+    }
+
+    private void HandleNoteClick()
+    {
+        if (!IsNewNote && !Note.Edit)
+        {
+            OnNoteClick.InvokeAsync(Note);
+        }
+    }
+
+    private async Task HandleInnerButtonClick(Func<Task> action)
+    {
+        await action.Invoke();
+        await JSRuntime.InvokeVoidAsync("event.stopPropagation");
+    }
+
+    private void HandleInnerButtonClick(Action action)
+    {
+        action.Invoke();
+        JSRuntime.InvokeVoidAsync("event.stopPropagation");
+    }
+}

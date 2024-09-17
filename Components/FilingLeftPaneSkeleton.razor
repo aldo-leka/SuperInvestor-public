@@ -1,0 +1,35 @@
+﻿<SuperCard Title="Filing Information">
+    <div class="skeleton-loader">
+        <div class="skeleton-line"></div>
+        <div class="skeleton-line"></div>
+        <div class="skeleton-line"></div>
+        <div class="skeleton-line"></div>
+    </div>
+    <div class="mt-3">
+        <h6>Recent Filings</h6>
+        <div class="skeleton-loader">
+            <div class="skeleton-line"></div>
+            <div class="skeleton-line"></div>
+            <div class="skeleton-line"></div>
+            <div class="skeleton-line"></div>
+            <div class="skeleton-line"></div>
+        </div>
+    </div>
+</SuperCard>
+
+<style>
+    .skeleton-loader {
+        animation: loading 1.5s infinite;
+    }
+    .skeleton-line {
+        height: 15px;
+        margin-bottom: 10px;
+        background-color: #e0e0e0;
+        border-radius: 4px;
+    }
+    @@keyframes loading {
+        0% { opacity: 0.6; }
+        50% { opacity: 1; }
+        100% { opacity: 0.6; }
+    }
+</style>

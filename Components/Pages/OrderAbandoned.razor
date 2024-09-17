@@ -1,0 +1,28 @@
+﻿@page "/OrderAbandoned"
+@inject NavigationManager NavigationManager
+
+<PageTitle>Order Cancelled - SuperInvestor</PageTitle>
+
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <SuperCard>
+                <div class="text-center">
+                    <i class="fas fa-times-circle text-danger" style="font-size: 4rem;"></i>
+                    <h2 class="mt-3">Order Cancelled</h2>
+                    <p class="lead">Your order has been cancelled and you have not been charged.</p>
+                    <hr />
+                    <p>If you encountered any issues during the checkout process or have any questions, please don't hesitate to contact our support team.</p>
+                    <div class="mt-4">
+                        <SuperButton OnClick="@(() => NavigationManager.NavigateTo("/"))" Type="ButtonType.Primary">
+                            <i class="fas fa-home me-2"></i>Return to Home
+                        </SuperButton>
+                        <SuperButton OnClick="@(() => NavigationManager.NavigateTo("/upgrade"))" Type="ButtonType.Secondary" CssClass="ms-2">
+                            <i class="fas fa-redo me-2"></i>Try Again
+                        </SuperButton>
+                    </div>
+                </div>
+            </SuperCard>
+        </div>
+    </div>
+</div>

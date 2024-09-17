@@ -1,0 +1,163 @@
+﻿@page "/"
+
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject UserService UserService
+@inject SubscriptionService SubscriptionService
+
+<PageTitle>Home</PageTitle>
+
+<AuthorizeView>
+    <Authorized>
+        @if (hasActiveSubscription)
+        {
+            <RecentCompaniesOverview />
+        }
+        else
+        {
+            <div class="container-fluid">
+                <section class="row py-5">
+                    <div class="col-md-8 mx-auto text-center">
+                        <h1 class="display-4 mb-3">Upgrade to SuperInvestor Pro</h1>
+                        <p class="lead mb-4">Unlock advanced features and take your financial research to the next level.</p>
+                        <SuperButton OnClick="@(() => NavigationManager.NavigateTo("upgrade"))" CssClass="btn btn-primary btn-lg">Upgrade Now</SuperButton>
+                    </div>
+                </section>
+
+                <section class="row py-5">
+                    <div class="col-md-8 mx-auto">
+                        <div class="row row-cols-1 g-4">
+                            <div class="col">
+                                <SuperCard Title="Comprehensive Filing Access">
+                                    <div class="feature-media-container mb-3">
+                                        <img src="/images/feature1.webp" alt="Comprehensive Filing Access" class="img-fluid rounded feature-media">
+                                    </div>
+                                    <p class="card-text">Browse and search through filings for all US-listed companies, ensuring you have the data you need at your fingertips.</p>
+                                </SuperCard>
+                            </div>
+                            <div class="col">
+                                <SuperCard Title="Integrated Note-Taking">
+                                    <div class="feature-media-container mb-3">
+                                        <img src="/images/feature2.webp" alt="Integrated Note-Taking" class="img-fluid rounded feature-media">
+                                    </div>
+                                    <p class="card-text">Take detailed notes on each filing, capturing your insights and observations directly alongside the source material.</p>
+                                </SuperCard>
+                            </div>
+                            <div class="col">
+                                <SuperCard Title="Organized Research">
+                                    <div class="feature-media-container mb-3">
+                                        <img src="/images/feature3.webp" alt="Organized Research" class="img-fluid rounded feature-media">
+                                    </div>
+                                    <p class="card-text">Keep your notes and research organized, allowing you to focus on analysis without worrying about information management.</p>
+                                </SuperCard>
+                            </div>
+                            <div class="col">
+                                <SuperCard Title="Flexible Sharing Options">
+                                    <div class="feature-media-container mb-3">
+                                        <img src="/images/feature4.webp" alt="Flexible Sharing Options" class="img-fluid rounded feature-media">
+                                    </div>
+                                    <p class="card-text">Share your research insights with others, either publicly or privately, fostering collaboration and knowledge exchange.</p>
+                                </SuperCard>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="row py-5 bg-light">
+                    <div class="col-md-8 mx-auto text-center">
+                        <h2 class="mb-3">Ready to elevate your financial research?</h2>
+                        <SuperButton OnClick="@(() => NavigationManager.NavigateTo("upgrade"))" CssClass="btn btn-primary btn-lg">Upgrade to Pro</SuperButton>
+                    </div>
+                </section>
+            </div>
+        }
+    </Authorized>
+    <NotAuthorized>
+        <div class="container-fluid">
+            <section class="row py-5">
+                <div class="col-md-8 mx-auto text-center">
+                    <h1 class="display-4 mb-3">Streamline Your Financial Research</h1>
+                    <p class="lead mb-4">Access, analyze, and annotate SEC filings for all US-listed companies in one place.</p>
+                    <SuperButton OnClick="@(() => NavigationManager.NavigateTo("Account/Register"))" CssClass="btn btn-primary btn-lg">Start Your Research Now</SuperButton>
+                </div>
+            </section>
+
+            <section class="row py-5">
+                <div class="col-md-8 mx-auto">
+                    <div class="row row-cols-1 g-4">
+                        <div class="col">
+                            <SuperCard Title="Comprehensive Filing Access">
+                                <div class="feature-media-container mb-3">
+                                    <img src="/images/feature1.webp" alt="Comprehensive Filing Access" class="img-fluid rounded feature-media">
+                                </div>
+                                <p class="card-text">Browse and search through filings for all US-listed companies, ensuring you have the data you need at your fingertips.</p>
+                            </SuperCard>
+                        </div>
+                        <div class="col">
+                            <SuperCard Title="Integrated Note-Taking">
+                                <div class="feature-media-container mb-3">
+                                    <img src="/images/feature2.webp" alt="Integrated Note-Taking" class="img-fluid rounded feature-media">
+                                </div>
+                                <p class="card-text">Take detailed notes on each filing, capturing your insights and observations directly alongside the source material.</p>
+                            </SuperCard>
+                        </div>
+                        <div class="col">
+                            <SuperCard Title="Organized Research">
+                                <div class="feature-media-container mb-3">
+                                    <img src="/images/feature3.webp" alt="Organized Research" class="img-fluid rounded feature-media">
+                                </div>
+                                <p class="card-text">Keep your notes and research organized, allowing you to focus on analysis without worrying about information management.</p>
+                            </SuperCard>
+                        </div>
+                        <div class="col">
+                            <SuperCard Title="Flexible Sharing Options">
+                                <div class="feature-media-container mb-3">
+                                    <img src="/images/feature4.webp" alt="Flexible Sharing Options" class="img-fluid rounded feature-media">
+                                </div>
+                                <p class="card-text">Share your research insights with others, either publicly or privately, fostering collaboration and knowledge exchange.</p>
+                            </SuperCard>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="row py-5 bg-light">
+                <div class="col-md-8 mx-auto text-center">
+                    <h2 class="mb-3">Ready to elevate your financial research?</h2>
+                    <SuperButton OnClick="@(() => NavigationManager.NavigateTo("Account/Register"))" CssClass="btn btn-primary btn-lg">Get Started Now</SuperButton>
+                </div>
+            </section>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
+
+<style>
+    .feature-media-container {
+        width: 100%;
+        max-width: 600px; /* Adjust this value as needed */
+        margin: 0 auto;
+    }
+
+    .feature-media {
+        width: 100%;
+        height: auto;
+        object-fit: cover;
+    }
+</style>
+
+@code {
+    private bool hasActiveSubscription = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        if (auth.User.Identity.IsAuthenticated)
+        {
+            var user = await UserService.GetUser();
+            hasActiveSubscription = await SubscriptionService.HasActiveSubscription(user);
+        }
+    }
+}

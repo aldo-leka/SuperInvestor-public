@@ -1,0 +1,104 @@
+﻿@page "/Error/404"
+@inject NavigationManager NavigationManager
+
+<div class="error-container">
+    <h1 class="error-title">404</h1>
+    <h2 class="error-subtitle">Oops! Investment Not Found</h2>
+    <p class="error-message">
+        Even super investors sometimes lose track of their assets.
+        This page seems to have vanished from our portfolio.
+    </p>
+    <div class="stock-ticker">
+        <div class="ticker-item">ERRO <!-- Error --> <span class="down">▼ 404.00</span></div>
+        <div class="ticker-item">PGNT <!-- Page Not Found --> <span class="down">▼ 100.00</span></div>
+        <div class="ticker-item">INVS <!-- Invest --> <span class="up">▲ 200.00</span></div>
+    </div>
+    <div class="action-buttons">
+        <a href="/" class="btn btn-primary">Return to Homepage</a>
+        <a href="javascript:history.back()" class="btn btn-secondary">Go Back</a>
+    </div>
+</div>
+
+<style>
+    .error-container {
+    text-align: center;
+    padding: 50px 20px;
+    font-family: Arial, sans-serif;
+}
+
+.error-title {
+    font-size: 120px;
+    margin: 0;
+    color: #e74c3c;
+}
+
+.error-subtitle {
+    font-size: 36px;
+    margin-top: 0;
+}
+
+.error-message {
+    font-size: 18px;
+    margin-bottom: 30px;
+}
+
+.stock-ticker {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 30px;
+    overflow: hidden;
+}
+
+.ticker-item {
+    margin: 0 20px;
+    font-family: monospace;
+    font-size: 18px;
+    white-space: nowrap;
+}
+
+.up {
+    color: #2ecc71;
+}
+
+.down {
+    color: #e74c3c;
+}
+
+.action-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+}
+
+.btn {
+    padding: 10px 20px;
+    font-size: 16px;
+    cursor: pointer;
+    border: none;
+    border-radius: 5px;
+}
+
+.btn-primary {
+    background-color: #3498db;
+    color: white;
+}
+
+.btn-secondary {
+    background-color: #95a5a6;
+    color: white;
+}
+
+@@keyframes ticker {
+    0% {
+        transform: translateX(100%);
+    }
+
+    100% {
+        transform: translateX(-100%);
+    }
+}
+
+.stock-ticker {
+    animation: ticker 20s linear infinite;
+}
+</style>
