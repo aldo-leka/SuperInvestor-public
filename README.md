@@ -1,99 +1,72 @@
 # SuperInvestor
 
-SuperInvestor is a Blazor application for managing and analyzing investment filings.
+SuperInvestor is a note-taking application for investors, built with ASP.NET Core Blazor. It allows users to integrate financial filings from the SEC, take structured notes, and organize research efficiently.
 
-## Getting Started
+## ✨ Features
+- 📄 **Integrated SEC Filing Search** – Fetch and display financial reports from the SEC API.
+- 📝 **Rich-Text Note-Taking** – Annotate filings and save structured notes.
+- 🔍 **Search & Filter Notes** – Quickly find notes by stock ticker, date, or keywords.
+- 🌍 **Blazor-Powered UI** – Smooth and interactive interface built with Blazor.
+- 🗄️ **Secure Data Storage** – Persist notes locally or through database integration.
 
-### Prerequisites
+---
 
+## 🚀 Getting Started
+
+### **Prerequisites**
 - .NET 7.0 SDK or later
 - Node.js and npm
 
-### Setting up the development environment
+### **Setup**
+1. **Clone the repository**  
+   ```sh
+   git clone https://github.com/aldo-leka/SuperInvestor-public.git
+   ```
+2. **Navigate to project root**  
+   ```sh
+   cd SuperInvestor-public
+   ```
+3. **Set up configuration**  
+   - Enter API secrets in `appsettings.json`
 
-1. Clone the repository
-2. Navigate to the project root directory
-3. Enter the secrets for appsettings.json
-
-### Installing JavaScript dependencies
-
-1. Ensure you have Node.js and npm installed on your system.
-2. In the project root directory, run:
-
-```
+### **Installing JavaScript Dependencies**
+```sh
 npm install
 ```
-
-This will install all the JavaScript dependencies defined in the `package.json` file.
-
-3. To automatically rebuild the bundle on each change, run:
-
-```
+To watch for changes and rebuild automatically:
+```sh
 npm run watch
 ```
 
-This command will watch for changes in your JavaScript files and automatically rebuild the bundle.js file.
-
-### Adding new JavaScript libraries
-
-1. To add a new JavaScript library, use the following command:
-
-```
-npm install <library-name> --save
-```
-
-For example, to add the `lodash` library:
-
-```
-npm install lodash --save
-```
-
-2. After installing, you can import and use the library in your JavaScript files:
-
-```javascript
-import _ from 'lodash';
-```
-
-### Using JavaScript libraries in the project
-
-1. In your JavaScript files (e.g., in the `wwwroot/javascript` directory), you can import and use the installed libraries:
-
-```javascript
-import _ from 'lodash';
-import Mark from 'mark.js/dist/mark.es6.min.js';
-
-// Use the libraries in your code
-```
-
-2. After modifying your JavaScript files, run the build script to bundle your JavaScript:
-
-```
-npm run build
-```
-
-3. The bundled JavaScript file (`bundle.js`) is already included in your `App.razor` file:
-
-```html
-<script src="dist/bundle.js"></script>
-```
-
-### Running the application
-
-1. To run the application, use the following command in the project root directory:
-
-```
+### **Running the Application**
+```sh
 dotnet run
 ```
+Then, open your browser and go to:  
+**🔗 https://localhost:7083** (or the port specified in the console output)
 
-2. Open a web browser and navigate to `https://localhost:7083` (or the port specified in the console output).
+---
 
-## Project Structure
+## 📁 Project Structure
+```
+SuperInvestor-public/
+│── wwwroot/javascript/   # JavaScript files
+│── Components/           # Blazor components
+│── Services/             # C# service classes
+│── wwwroot/dist/         # Bundled JavaScript
+```
 
-- `wwwroot/javascript`: Contains all JavaScript files for the project
-- `Components`: Contains Blazor components
-- `Services`: Contains C# service classes
-- `wwwroot/dist`: Contains the bundled JavaScript file
+---
 
-## Additional Information
+## 🤝 Contributing
+Want to improve SuperInvestor? Feel free to **fork the repo and submit a pull request!**
 
-For more detailed information about specific components or services, please refer to the comments in the respective files.
+---
+
+## 📜 License
+This project is licensed under the **MIT License**.
+
+---
+
+## 📬 Contact
+For questions or feature requests, reach out via **GitHub Issues**.
