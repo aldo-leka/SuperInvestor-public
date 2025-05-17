@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.HttpOverrides;
 using Resend;
 using Serilog;
 using Serilog.Events;
@@ -58,8 +59,8 @@ builder.Services.Configure<ResendClientOptions>(o =>
 {
     o.ApiToken = builder.Configuration["Resend:ApiKey"];
 });
-builder.Services.AddTransient<IResend, ResendClient>();
-builder.Services.AddSingleton<IEmailSender<ApplicationUser>, ResendEmailSender>();
+builder.Services.AddScoped<IResend, ResendClient>();
+builder.Services.AddScoped<IEmailSender<ApplicationUser>, ResendEmailSender>();
 
 builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
@@ -99,6 +100,11 @@ else
     app.UseExceptionHandler("/Error/500", createScopeForErrors: true);
     app.UseHsts();
 }
+
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+});
 
 app.UseHttpsRedirection();
 

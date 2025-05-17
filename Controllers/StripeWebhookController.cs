@@ -36,19 +36,19 @@ public class StripeWebhookController(IConfiguration configuration, ILogger<Strip
 
             switch (stripeEvent.Type)
             {
-                case Events.CheckoutSessionCompleted:
+                case EventTypes.CheckoutSessionCompleted:
                     await HandleCheckoutSessionCompletedAsync(stripeEvent);
                     break;
-                case Events.CustomerSubscriptionUpdated:
+                case EventTypes.CustomerSubscriptionUpdated:
                     await HandleCustomerSubscriptionUpdatedAsync(stripeEvent);
                     break;
-                case Events.CustomerSubscriptionDeleted:
+                case EventTypes.CustomerSubscriptionDeleted:
                     await HandleCustomerSubscriptionDeletedAsync(stripeEvent);
                     break;
-                case Events.InvoicePaymentSucceeded:
+                case EventTypes.InvoicePaymentSucceeded:
                     await HandleInvoicePaymentSucceededAsync(stripeEvent);
                     break;
-                case Events.InvoicePaymentFailed:
+                case EventTypes.InvoicePaymentFailed:
                     await HandleInvoicePaymentFailedAsync(stripeEvent);
                     break;
                 default:
@@ -86,7 +86,8 @@ public class StripeWebhookController(IConfiguration configuration, ILogger<Strip
         }
 
         var stripeSubscription = sessionWithLineItems.Subscription;
-        var price = stripeSubscription.Items.Data[0].Price;
+        var subscriptionItem = stripeSubscription.Items.Data[0];
+        var price = subscriptionItem.Price;
 
         var dbSubscription = new Data.Subscription
         {
@@ -96,8 +97,8 @@ public class StripeWebhookController(IConfiguration configuration, ILogger<Strip
             StartDate = DateTime.UtcNow,
             Status = stripeSubscription.Status,
             PlanId = price.Id,
-            CurrentPeriodStart = stripeSubscription.CurrentPeriodStart,
-            CurrentPeriodEnd = stripeSubscription.CurrentPeriodEnd,
+            CurrentPeriodStart = subscriptionItem.CurrentPeriodStart,
+            CurrentPeriodEnd = subscriptionItem.CurrentPeriodEnd,
             PlanName = price.Nickname,
             PlanAmount = price.UnitAmount ?? 0,
             PlanCurrency = price.Currency,
@@ -120,12 +121,13 @@ public class StripeWebhookController(IConfiguration configuration, ILogger<Strip
             return;
         }
 
-        var price = stripeSubscription.Items.Data[0].Price;
+        var subscriptionItem = stripeSubscription.Items.Data[0];
+        var price = subscriptionItem.Price;
         dbSubscription.Status = stripeSubscription.Status;
         dbSubscription.PlanId = price.Id;
-        dbSubscription.EndDate = stripeSubscription.CancelAtPeriodEnd ? stripeSubscription.CurrentPeriodEnd : null;
-        dbSubscription.CurrentPeriodStart = stripeSubscription.CurrentPeriodStart;
-        dbSubscription.CurrentPeriodEnd = stripeSubscription.CurrentPeriodEnd;
+        dbSubscription.EndDate = stripeSubscription.CancelAtPeriodEnd ? subscriptionItem.CurrentPeriodEnd : null;
+        dbSubscription.CurrentPeriodStart = subscriptionItem.CurrentPeriodStart;
+        dbSubscription.CurrentPeriodEnd = subscriptionItem.CurrentPeriodEnd;
         dbSubscription.PlanName = price.Nickname;
         dbSubscription.PlanAmount = price.UnitAmount ?? 0;
         dbSubscription.PlanCurrency = price.Currency;
@@ -147,10 +149,11 @@ public class StripeWebhookController(IConfiguration configuration, ILogger<Strip
             return;
         }
 
+        var subscriptionItem = stripeSubscription.Items.Data[0];
         await _subscriptionService.CancelSubscription(
             dbSubscription.Id,
             "canceled",
-            stripeSubscription.CurrentPeriodEnd);
+            subscriptionItem.CurrentPeriodEnd);
 
         _logger.LogInformation("Subscription canceled: {SubscriptionId}", stripeSubscription.Id);
     }
@@ -158,11 +161,37 @@ public class StripeWebhookController(IConfiguration configuration, ILogger<Strip
     private async Task HandleInvoicePaymentSucceededAsync(Event stripeEvent)
     {
         var invoice = stripeEvent.Data.Object as Invoice;
-        var subscription = await _subscriptionService.GetSubscriptionByStripeSubscriptionId(invoice.SubscriptionId);
+        
+        // Expand the invoice to get the lines which contain subscription information
+        var invoiceService = new InvoiceService();
+        var invoiceOptions = new InvoiceGetOptions
+        {
+            Expand = new List<string> { "lines" }
+        };
+        var invoiceWithLines = await invoiceService.GetAsync(invoice.Id, invoiceOptions);
+        
+        // Find the subscription ID from the lines
+        string subscriptionId = null;
+        foreach (var line in invoiceWithLines.Lines.Data)
+        {
+            if (line.Subscription != null)
+            {
+                subscriptionId = line.Subscription.Id;
+                break;
+            }
+        }
+        
+        if (string.IsNullOrEmpty(subscriptionId))
+        {
+            _logger.LogError("No subscription found in invoice: {InvoiceId}", invoice.Id);
+            return;
+        }
+        
+        var subscription = await _subscriptionService.GetSubscriptionByStripeSubscriptionId(subscriptionId);
 
         if (subscription == null)
         {
-            _logger.LogError("Subscription not found: {SubscriptionId}", invoice.SubscriptionId);
+            _logger.LogError("Subscription not found in database: {SubscriptionId}", subscriptionId);
             return;
         }
 
@@ -172,24 +201,50 @@ public class StripeWebhookController(IConfiguration configuration, ILogger<Strip
             await _subscriptionService.UpdateSubscriptionStatus(subscription.Id, "active");
         }
 
-        _logger.LogInformation("Payment succeeded for subscription: {SubscriptionId}", invoice.SubscriptionId);
+        _logger.LogInformation("Payment succeeded for subscription: {SubscriptionId}", subscriptionId);
     }
 
     private async Task HandleInvoicePaymentFailedAsync(Event stripeEvent)
     {
         var invoice = stripeEvent.Data.Object as Invoice;
-        var subscription = await _subscriptionService.GetSubscriptionByStripeSubscriptionId(invoice.SubscriptionId);
+        
+        // Expand the invoice to get the lines which contain subscription information
+        var invoiceService = new InvoiceService();
+        var invoiceOptions = new InvoiceGetOptions
+        {
+            Expand = new List<string> { "lines" }
+        };
+        var invoiceWithLines = await invoiceService.GetAsync(invoice.Id, invoiceOptions);
+        
+        // Find the subscription ID from the lines
+        string subscriptionId = null;
+        foreach (var line in invoiceWithLines.Lines.Data)
+        {
+            if (line.Subscription != null)
+            {
+                subscriptionId = line.Subscription.Id;
+                break;
+            }
+        }
+        
+        if (string.IsNullOrEmpty(subscriptionId))
+        {
+            _logger.LogError("No subscription found in invoice: {InvoiceId}", invoice.Id);
+            return;
+        }
+        
+        var subscription = await _subscriptionService.GetSubscriptionByStripeSubscriptionId(subscriptionId);
 
         if (subscription == null)
         {
-            _logger.LogError("Subscription not found: {SubscriptionId}", invoice.SubscriptionId);
+            _logger.LogError("Subscription not found in database: {SubscriptionId}", subscriptionId);
             return;
         }
 
         // Update subscription status
         await _subscriptionService.UpdateSubscriptionStatus(subscription.Id, "past_due");
 
-        _logger.LogWarning("Payment failed for subscription: {SubscriptionId}", invoice.SubscriptionId);
+        _logger.LogWarning("Payment failed for subscription: {SubscriptionId}", subscriptionId);
 
         // TODO: Implement logic to notify the user about the failed payment
     }
