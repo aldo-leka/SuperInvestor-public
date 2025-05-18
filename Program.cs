@@ -6,10 +6,14 @@ using Resend;
 using Serilog;
 using Serilog.Events;
 using Stripe;
-using SuperInvestor.Components;
-using SuperInvestor.Components.Account;
-using SuperInvestor.Data;
-using SuperInvestor.Services;
+using SuperInvestor.Features.App.Components;
+using SuperInvestor.Features.Common.Data;
+using SuperInvestor.Features.Identity.Data;
+using SuperInvestor.Features.Companies.Services;
+using SuperInvestor.Features.Identity.Services;
+using SuperInvestor.Features.Notes.Services;
+using SuperInvestor.Features.Research.Services;
+using SuperInvestor.Features.UI.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -49,8 +53,8 @@ builder.Services.AddIdentityCore<ApplicationUser>(options => options.SignIn.Requ
     .AddDefaultTokenProviders();
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseNpgsql(connectionString), ServiceLifetime.Transient);
+builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
+    options.UseNpgsql(connectionString));
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
 builder.Services.AddOptions();
@@ -70,12 +74,15 @@ builder.Services.AddScoped<FilingEventService>();
 builder.Services.AddScoped<NoteHighlightService>();
 builder.Services.AddScoped<CompanyTickerService>();
 builder.Services.AddScoped<UserService>();
-builder.Services.AddScoped<SuperInvestor.Services.SubscriptionService>();
+builder.Services.AddScoped<SuperInvestor.Features.Subscription.Services.SubscriptionService>();
 builder.Services.AddScoped<ToastService>();
 builder.Services.AddScoped<ShareService>();
 builder.Services.AddScoped<NoteService>();
 builder.Services.AddScoped<ResearchService>();
 builder.Services.AddScoped<FilingCategoryService>();
+builder.Services.AddHttpClient<TurnstileService>();
+builder.Services.AddScoped<TurnstileService>();
+builder.Services.AddHttpContextAccessor();
 
 builder.Services.AddControllers();
 

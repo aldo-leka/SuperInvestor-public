@@ -1,0 +1,39 @@
+@inject IJSRuntime JSRuntime
+@inject IConfiguration Configuration
+@implements IAsyncDisposable
+
+<div @ref="turnstileElement"></div>
+
+@code {
+    [Parameter] public EventCallback<string> OnVerified { get; set; }
+    
+    private ElementReference turnstileElement;
+    private string? widgetId;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            Console.WriteLine($"Turnstile widget id: ...");
+            
+            var dotNetRef = DotNetObjectReference.Create(this);
+            widgetId = await JSRuntime.InvokeAsync<string>("ts.renderTurnstile", 
+                turnstileElement, Configuration["Turnstile:SiteKey"], dotNetRef);
+            Console.WriteLine($"Turnstile widget id: {widgetId}");
+        }
+    }
+    
+    [JSInvokable]
+    public async Task OnTurnstileVerified(string token)
+    {
+        await OnVerified.InvokeAsync(token);
+    }
+    
+    public async ValueTask DisposeAsync()
+    {
+        if (!string.IsNullOrEmpty(widgetId))
+        {
+            await JSRuntime.InvokeVoidAsync("ts.removeTurnstile", widgetId);
+        }
+    }
+}

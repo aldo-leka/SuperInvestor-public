@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
-using SuperInvestor.Data;
+using SuperInvestor.Features.Common.Data;
 
 #nullable disable
 
@@ -154,7 +154,7 @@ namespace SuperInvestor.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
-            modelBuilder.Entity("SuperInvestor.Data.ApplicationUser", b =>
+            modelBuilder.Entity("SuperInvestor.Features.Identity.Data.ApplicationUser", b =>
                 {
                     b.Property<string>("Id")
                         .HasColumnType("text");
@@ -221,7 +221,7 @@ namespace SuperInvestor.Migrations
                     b.ToTable("AspNetUsers", (string)null);
                 });
 
-            modelBuilder.Entity("SuperInvestor.Data.Note", b =>
+            modelBuilder.Entity("SuperInvestor.Features.Notes.Data.Note", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -266,7 +266,7 @@ namespace SuperInvestor.Migrations
                     b.ToTable("Notes");
                 });
 
-            modelBuilder.Entity("SuperInvestor.Data.Research", b =>
+            modelBuilder.Entity("SuperInvestor.Features.Research.Data.Research", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -291,7 +291,7 @@ namespace SuperInvestor.Migrations
                     b.ToTable("Researches");
                 });
 
-            modelBuilder.Entity("SuperInvestor.Data.Subscription", b =>
+            modelBuilder.Entity("SuperInvestor.Features.Subscription.Data.Subscription", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -357,7 +357,7 @@ namespace SuperInvestor.Migrations
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserClaim<string>", b =>
                 {
-                    b.HasOne("SuperInvestor.Data.ApplicationUser", null)
+                    b.HasOne("SuperInvestor.Features.Identity.Data.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -366,7 +366,7 @@ namespace SuperInvestor.Migrations
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserLogin<string>", b =>
                 {
-                    b.HasOne("SuperInvestor.Data.ApplicationUser", null)
+                    b.HasOne("SuperInvestor.Features.Identity.Data.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -381,7 +381,7 @@ namespace SuperInvestor.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("SuperInvestor.Data.ApplicationUser", null)
+                    b.HasOne("SuperInvestor.Features.Identity.Data.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
@@ -390,20 +390,20 @@ namespace SuperInvestor.Migrations
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserToken<string>", b =>
                 {
-                    b.HasOne("SuperInvestor.Data.ApplicationUser", null)
+                    b.HasOne("SuperInvestor.Features.Identity.Data.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("SuperInvestor.Data.Note", b =>
+            modelBuilder.Entity("SuperInvestor.Features.Notes.Data.Note", b =>
                 {
-                    b.HasOne("SuperInvestor.Data.Research", "Research")
+                    b.HasOne("SuperInvestor.Features.Research.Data.Research", "Research")
                         .WithMany("Notes")
                         .HasForeignKey("ResearchId");
 
-                    b.HasOne("SuperInvestor.Data.ApplicationUser", "User")
+                    b.HasOne("SuperInvestor.Features.Identity.Data.ApplicationUser", "User")
                         .WithMany("Notes")
                         .HasForeignKey("UserId");
 
@@ -412,25 +412,25 @@ namespace SuperInvestor.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("SuperInvestor.Data.Research", b =>
+            modelBuilder.Entity("SuperInvestor.Features.Research.Data.Research", b =>
                 {
-                    b.HasOne("SuperInvestor.Data.ApplicationUser", "User")
+                    b.HasOne("SuperInvestor.Features.Identity.Data.ApplicationUser", "User")
                         .WithMany("Researches")
                         .HasForeignKey("UserId");
 
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("SuperInvestor.Data.Subscription", b =>
+            modelBuilder.Entity("SuperInvestor.Features.Subscription.Data.Subscription", b =>
                 {
-                    b.HasOne("SuperInvestor.Data.ApplicationUser", "User")
+                    b.HasOne("SuperInvestor.Features.Identity.Data.ApplicationUser", "User")
                         .WithOne("Subscription")
-                        .HasForeignKey("SuperInvestor.Data.Subscription", "UserId");
+                        .HasForeignKey("SuperInvestor.Features.Subscription.Data.Subscription", "UserId");
 
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("SuperInvestor.Data.ApplicationUser", b =>
+            modelBuilder.Entity("SuperInvestor.Features.Identity.Data.ApplicationUser", b =>
                 {
                     b.Navigation("Notes");
 
@@ -439,7 +439,7 @@ namespace SuperInvestor.Migrations
                     b.Navigation("Subscription");
                 });
 
-            modelBuilder.Entity("SuperInvestor.Data.Research", b =>
+            modelBuilder.Entity("SuperInvestor.Features.Research.Data.Research", b =>
                 {
                     b.Navigation("Notes");
                 });

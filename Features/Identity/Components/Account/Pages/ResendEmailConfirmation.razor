@@ -1,0 +1,103 @@
+﻿@page "/Account/ResendEmailConfirmation"
+
+@using System.ComponentModel.DataAnnotations
+@using System.Text
+@using System.Text.Encodings.Web
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.AspNetCore.WebUtilities
+@using SuperInvestor.Features.Identity.Services
+@using SuperInvestor.Features.Identity.Components.Account.Shared
+
+@inject UserManager<ApplicationUser> UserManager
+@inject IEmailSender<ApplicationUser> EmailSender
+@inject NavigationManager NavigationManager
+@inject IdentityRedirectManager RedirectManager
+@inject TurnstileService TurnstileService
+@inject IHttpContextAccessor HttpContextAccessor
+
+<PageTitle>Resend Email Confirmation</PageTitle>
+
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <SuperCard Title="Resend Email Confirmation">
+                <StatusMessage Message="@message" />
+                <p class="text-muted mb-4">Enter your email to resend the confirmation link.</p>
+                <EditForm Model="Input" FormName="resend-email-confirmation" OnValidSubmit="OnValidSubmitAsync" method="post">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary class="text-danger" role="alert" />
+                    <div class="form-floating mb-3">
+                        <InputText @bind-Value="Input.Email" class="form-control" autocomplete="username" aria-required="true" placeholder="name@example.com" />
+                        <label for="email" class="form-label">Email</label>
+                        <ValidationMessage For="() => Input.Email" class="text-danger" />
+                    </div>
+                    
+                    <TurnstileFormWidget />
+                    
+                    
+                    <div class="d-grid gap-2">
+                        <SuperButton Type="ButtonType.Primary">Resend</SuperButton>
+                    </div>
+                </EditForm>
+                <div class="mt-3 text-center">
+                    <a href="Account/Login" class="text-decoration-none">Back to Login</a>
+                </div>
+            </SuperCard>
+        </div>
+    </div>
+</div>
+
+@code {
+    private string message;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = new();
+    
+    // For non-interactive mode, we handle the Turnstile token directly from the form submission
+
+    [SupplyParameterFromForm]
+    private string turnstileResponse { get; set; } = string.Empty;
+
+    private async Task OnValidSubmitAsync()
+    {
+        // Verify Turnstile token
+        if (string.IsNullOrEmpty(turnstileResponse))
+        {
+            message = "Please complete the captcha verification.";
+            return;
+        }
+
+        var remoteIp = HttpContextAccessor.HttpContext?.Connection?.RemoteIpAddress?.ToString();
+        bool isValid = await TurnstileService.VerifyTokenAsync(turnstileResponse, remoteIp);
+
+        if (!isValid)
+        {
+            message = "Captcha verification failed. Please try again.";
+            return;
+        }
+
+        var user = await UserManager.FindByEmailAsync(Input.Email!);
+        if (user is null)
+        {
+            message = "Verification email sent. Please check your email.";
+            return;
+        }
+
+        var userId = await UserManager.GetUserIdAsync(user);
+        var code = await UserManager.GenerateEmailConfirmationTokenAsync(user);
+        code = WebEncoders.Base64UrlEncode(Encoding.UTF8.GetBytes(code));
+        var callbackUrl = NavigationManager.GetUriWithQueryParameters(
+            NavigationManager.ToAbsoluteUri("Account/ConfirmEmail").AbsoluteUri,
+            new Dictionary<string, object> { ["userId"] = userId, ["code"] = code });
+        await EmailSender.SendConfirmationLinkAsync(user, Input.Email, HtmlEncoder.Default.Encode(callbackUrl));
+
+        message = "Verification email sent. Please check your email.";
+    }
+
+    private sealed class InputModel
+    {
+        [Required]
+        [EmailAddress]
+        public string Email { get; set; } = "";
+    }
+}

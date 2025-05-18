@@ -14,7 +14,7 @@ SuperInvestor is a note-taking application for investors, built with ASP.NET Cor
 ## 🚀 Getting Started
 
 ### **Prerequisites**
-- .NET 7.0 SDK or later
+- .NET 9.0 SDK
 - Node.js and npm
 
 ### **Setup**

@@ -1,0 +1,29 @@
+@inject IConfiguration Configuration
+
+<div class="cf-turnstile mb-3" data-sitekey="@SiteKey" data-callback="turnstileCallback"></div>
+
+<input type="hidden" name="turnstileResponse" id="turnstileResponseField" />
+
+<script>
+    function turnstileCallback(token) {
+        document.getElementById('turnstileResponseField').value = token;
+        
+        // Enable all submit buttons after verification
+        var buttons = document.querySelectorAll('button[type="submit"]');
+        for (var i = 0; i < buttons.length; i++) {
+            buttons[i].disabled = false;
+        }
+    }
+    
+    // Disable all submit buttons until verification
+    window.addEventListener('DOMContentLoaded', function() {
+        var buttons = document.querySelectorAll('button[type="submit"]');
+        for (var i = 0; i < buttons.length; i++) {
+            buttons[i].disabled = true;
+        }
+    });
+</script>
+
+@code {
+    private string SiteKey => Configuration["Turnstile:SiteKey"];
+}
