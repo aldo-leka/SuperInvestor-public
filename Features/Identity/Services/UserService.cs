@@ -94,4 +94,10 @@ public class UserService(UserManager<ApplicationUser> userManager, Authenticatio
     {
         return await userManager.IsInRoleAsync(user, "Admin");
     }
+    
+    public async Task<int> GetUserCount()
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        return await db.Users.CountAsync();
+    }
 }

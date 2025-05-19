@@ -1,0 +1,22 @@
+﻿@using SuperInvestor.Features.Identity.Services
+@inject UserService UserService
+
+@if (userCount > 0)
+{
+    <div class="@CssClass">
+        <span class="badge bg-primary">
+            <i class="fas fa-heart text-danger"></i> Loved by @userCount investors
+        </span>
+    </div>
+}
+
+@code {
+    [Parameter] public string CssClass { get; set; } = "text-center mb-3";
+    
+    private int userCount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        userCount = await UserService.GetUserCount();
+    }
+}
