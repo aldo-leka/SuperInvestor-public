@@ -27,7 +27,7 @@ SuperInvestor is a note-taking application for investors, built with ASP.NET Cor
    cd SuperInvestor-public
    ```
 3. **Set up configuration**  
-   - Enter API secrets in `appsettings.json`
+   - Enter configuration values in `launchSettings.json` for local development.
 
 ### **Installing JavaScript Dependencies**
 ```sh
