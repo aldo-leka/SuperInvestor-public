@@ -1,4 +1,6 @@
-﻿namespace SuperInvestor.Features.Notes.Models;
+﻿using System.ComponentModel.DataAnnotations;
+
+namespace SuperInvestor.Features.Notes.Models;
 
 public class NoteViewModel
 {
@@ -15,6 +17,7 @@ public class NoteViewModel
     public int EndIndex { get; set; }
     public int InitialNoteLength { get; set; }
 
+    [MaxLength(1500, ErrorMessage = "Note cannot exceed 1500 characters")]
     public string FullText
     {
         get

@@ -16,6 +16,7 @@ public class Note
 
     public string Ticker { get; set; }
     public string AccessionNumber { get; set; }
+    [MaxLength(1500, ErrorMessage = "Note cannot exceed 1500 characters")]
     public string Text { get; set; }
     public int StartIndex { get; set; }
     public int EndIndex { get; set; }
