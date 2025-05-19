@@ -1,39 +1,104 @@
 ﻿using Microsoft.Net.Http.Headers;
+using System.Collections.Concurrent;
 
 namespace SuperInvestor.Features.Companies.Services;
 
 public class YahooClient
 {
+    private static readonly SemaphoreSlim _sessionLock = new SemaphoreSlim(1, 1);
     private static HttpClient cookieClient;
     private string crumb;
+    private DateTime lastCookieRenewal = DateTime.MinValue;
+    private static readonly TimeSpan CookieRenewalInterval = TimeSpan.FromHours(1);
+    
+    // Throttling to avoid rate limits
+    private static readonly ConcurrentDictionary<string, DateTime> _lastRequestTimes = new ConcurrentDictionary<string, DateTime>();
+    private static readonly TimeSpan _minRequestInterval = TimeSpan.FromSeconds(2);
 
-    private async Task Init()
+    private async Task Init(bool forceRenewal = false)
     {
-        string cookie;
-        var cookieClientHandler = new HttpClientHandler();
-        cookieClient = new HttpClient(cookieClientHandler)
+        // Use a semaphore to prevent multiple threads from initializing at the same time
+        await _sessionLock.WaitAsync();
+        try
         {
-            Timeout = TimeSpan.FromSeconds(30),
-        };
+            // Skip if we've already initialized and don't need to renew yet
+            if (cookieClient != null && !forceRenewal && DateTime.UtcNow - lastCookieRenewal < CookieRenewalInterval)
+            {
+                return;
+            }
 
-        cookieClientHandler.AllowAutoRedirect = true;
-        cookieClient.DefaultRequestHeaders.Add(
-            HeaderNames.UserAgent,
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36");
+            var cookieClientHandler = new HttpClientHandler();
+            cookieClient = new HttpClient(cookieClientHandler)
+            {
+                Timeout = TimeSpan.FromSeconds(30),
+            };
 
-        var response = await cookieClient.GetAsync("https://fc.yahoo.com/");
-        if (response.Headers.TryGetValues("Set-Cookie", out var cookies))
-        {
-            cookie = cookies.FirstOrDefault();
+            cookieClientHandler.AllowAutoRedirect = true;
+            cookieClientHandler.UseCookies = true;
+            cookieClientHandler.CookieContainer = new System.Net.CookieContainer();
+
+            // Modern Chrome user agent (as of 2024)
+            cookieClient.DefaultRequestHeaders.Add(
+                HeaderNames.UserAgent,
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36");
+            
+            // Add common browser headers to appear more legitimate
+            cookieClient.DefaultRequestHeaders.Add("Accept-Language", "en-US,en;q=0.9");
+            cookieClient.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8");
+            cookieClient.DefaultRequestHeaders.Add("Sec-Fetch-Site", "same-origin");
+            cookieClient.DefaultRequestHeaders.Add("Sec-Fetch-Mode", "navigate");
+            cookieClient.DefaultRequestHeaders.Add("Sec-Fetch-Dest", "document");
+            cookieClient.DefaultRequestHeaders.Add("Sec-Ch-Ua", "\"Chromium\";v=\"121\", \"Not A(Brand\";v=\"99\"");
+            cookieClient.DefaultRequestHeaders.Add("Sec-Ch-Ua-Mobile", "?0");
+            cookieClient.DefaultRequestHeaders.Add("Sec-Ch-Ua-Platform", "\"Windows\"");
+
+            // First get the cookies from a Yahoo domain
+            var response = await cookieClient.GetAsync("https://fc.yahoo.com/");
+            if (!response.IsSuccessStatusCode)
+            {
+                // Try alternative Yahoo domains if the first one fails
+                response = await cookieClient.GetAsync("https://finance.yahoo.com/");
+            }
+
+            // Then get the authentication crumb
+            // await Task.Delay(500); // Small delay between requests
+            response = await cookieClient.GetAsync("https://query1.finance.yahoo.com/v1/test/getcrumb");
+            if (response.IsSuccessStatusCode)
+            {
+                crumb = await response.Content.ReadAsStringAsync();
+            }
+            else
+            {
+                // Try backup method to get crumb
+                response = await cookieClient.GetAsync("https://finance.yahoo.com/quote/AAPL");
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    // Extract crumb using a simple method - in production you might use a more robust regex
+                    var crumbIndex = content.IndexOf("\"CrumbStore\":{\"crumb\":\"");
+                    if (crumbIndex > 0)
+                    {
+                        var startIndex = crumbIndex + 23;
+                        var endIndex = content.IndexOf("\"}", startIndex);
+                        if (endIndex > startIndex)
+                        {
+                            crumb = content.Substring(startIndex, endIndex - startIndex);
+                        }
+                    }
+                }
+            }
+
+            lastCookieRenewal = DateTime.UtcNow;
         }
-
-        response = await cookieClient.GetAsync("https://query1.finance.yahoo.com/v1/test/getcrumb");
-        crumb = await response.Content.ReadAsStringAsync();
+        finally
+        {
+            _sessionLock.Release();
+        }
     }
 
     public async Task<YahooQuote> GetAsync(string ticker)
     {
-        if (cookieClient is null)
+        if (cookieClient is null || DateTime.UtcNow - lastCookieRenewal > CookieRenewalInterval)
         {
             await Init();
         }
@@ -75,14 +140,59 @@ public class YahooClient
         // Pricing, etc: https://stackoverflow.com/questions/44030983/yahoo-finance-url-not-working
          */
 
+        // Implement request throttling
+        await ThrottleRequest(ticker);
+
+        // Use primary endpoint
         var url = $"https://query2.finance.yahoo.com/v10/finance/quoteSummary/{ticker}?modules=summaryProfile,summaryDetail&corsDomain=finance.yahoo.com&formatted=false&symbol={ticker}&crumb={crumb}";
-        var response = await cookieClient.GetAsync(url);
-        if (response.IsSuccessStatusCode)
+        
+        try
         {
-            return await response.Content.ReadFromJsonAsync<YahooQuote>();
+            var response = await cookieClient.GetAsync(url);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                return await response.Content.ReadFromJsonAsync<YahooQuote>();
+            }
+            
+            // If we got rate limited or auth issues, try refreshing cookies
+            if ((int)response.StatusCode == 429 || (int)response.StatusCode == 401)
+            {
+                await Init(forceRenewal: true);
+                
+                // Try once more with renewed cookies
+                response = await cookieClient.GetAsync(url);
+                if (response.IsSuccessStatusCode)
+                {
+                    return await response.Content.ReadFromJsonAsync<YahooQuote>();
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Fail silently
         }
 
         return default;
+    }
+    
+    private async Task ThrottleRequest(string key)
+    {
+        // Get the time of the last request for this key
+        if (_lastRequestTimes.TryGetValue(key, out var lastRequestTime))
+        {
+            var timeSinceLastRequest = DateTime.UtcNow - lastRequestTime;
+            
+            // If we've made a request too recently, wait until the minimum interval has passed
+            if (timeSinceLastRequest < _minRequestInterval)
+            {
+                var delayTime = _minRequestInterval - timeSinceLastRequest;
+                await Task.Delay(delayTime);
+            }
+        }
+        
+        // Update the last request time for this key
+        _lastRequestTimes[key] = DateTime.UtcNow;
     } 
 }
 
