@@ -1,32 +1,20 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Stripe;
 using Stripe.Checkout;
+using SuperInvestor.Features.Common.Services;
 using SuperInvestor.Features.Identity.Services;
-using SuperInvestor.Features.Subscription.Services;
-using SuperInvestor.Features.Subscription.Data;
 
 namespace SuperInvestor.Features.Subscription.Controllers;
 
 [Route("webhook")]
 [ApiController]
-public class StripeWebhookController(IConfiguration configuration, ILogger<StripeWebhookController> logger, UserService userService, SuperInvestor.Features.Subscription.Services.SubscriptionService subscriptionService) : ControllerBase
+public class StripeWebhookController(ILogger<StripeWebhookController> logger, UserService userService, Services.SubscriptionService subscriptionService) : ControllerBase
 {
-    private readonly IConfiguration _configuration = configuration;
-    private readonly ILogger<StripeWebhookController> _logger = logger;
-    private readonly UserService _userService = userService;
-    private readonly SuperInvestor.Features.Subscription.Services.SubscriptionService _subscriptionService = subscriptionService;
-
     [HttpPost]
     public async Task<IActionResult> Index()
     {
         var json = await new StreamReader(HttpContext.Request.Body).ReadToEndAsync();
-        var secret = _configuration["StripeWebHookSecret"];
-
-        if (string.IsNullOrEmpty(secret))
-        {
-            _logger.LogError("Stripe webhook secret is not configured");
-            return StatusCode(500, "Stripe webhook secret is not configured");
-        }
+        var secret = EnvironmentHelper.StripeWebHookSecret;
 
         try
         {
@@ -54,7 +42,7 @@ public class StripeWebhookController(IConfiguration configuration, ILogger<Strip
                     await HandleInvoicePaymentFailedAsync(stripeEvent);
                     break;
                 default:
-                    _logger.LogInformation("Unhandled event type: {0}", stripeEvent.Type);
+                    logger.LogInformation("Unhandled event type: {0}", stripeEvent.Type);
                     break;
             }
 
@@ -62,7 +50,7 @@ public class StripeWebhookController(IConfiguration configuration, ILogger<Strip
         }
         catch (StripeException e)
         {
-            _logger.LogError(e, "Error processing Stripe webhook");
+            logger.LogError(e, "Error processing Stripe webhook");
             return BadRequest("Invalid payload");
         }
     }
@@ -79,11 +67,11 @@ public class StripeWebhookController(IConfiguration configuration, ILogger<Strip
         var sessionWithLineItems = await service.GetAsync(session.Id, options);
 
         var userEmail = sessionWithLineItems.CustomerDetails.Email;
-        var user = await _userService.GetUserByEmailAsync(userEmail);
+        var user = await userService.GetUserByEmailAsync(userEmail);
 
         if (user == null)
         {
-            _logger.LogError("User not found for email: {Email}", userEmail);
+            logger.LogError("User not found for email: {Email}", userEmail);
             return;
         }
 
@@ -107,19 +95,19 @@ public class StripeWebhookController(IConfiguration configuration, ILogger<Strip
             PlanInterval = price.Recurring.Interval
         };
 
-        await _subscriptionService.CreateSubscription(dbSubscription);
+        await subscriptionService.CreateSubscription(dbSubscription);
 
-        _logger.LogInformation("Subscription created for user: {UserId}", user.Id);
+        logger.LogInformation("Subscription created for user: {UserId}", user.Id);
     }
 
     private async Task HandleCustomerSubscriptionUpdatedAsync(Event stripeEvent)
     {
         var stripeSubscription = stripeEvent.Data.Object as Stripe.Subscription;
-        var dbSubscription = await _subscriptionService.GetSubscriptionByStripeSubscriptionId(stripeSubscription.Id);
+        var dbSubscription = await subscriptionService.GetSubscriptionByStripeSubscriptionId(stripeSubscription.Id);
 
         if (dbSubscription == null)
         {
-            _logger.LogError("Subscription not found: {SubscriptionId}", stripeSubscription.Id);
+            logger.LogError("Subscription not found: {SubscriptionId}", stripeSubscription.Id);
             return;
         }
 
@@ -135,29 +123,29 @@ public class StripeWebhookController(IConfiguration configuration, ILogger<Strip
         dbSubscription.PlanCurrency = price.Currency;
         dbSubscription.PlanInterval = price.Recurring.Interval;
 
-        await _subscriptionService.UpdateSubscription(dbSubscription);
+        await subscriptionService.UpdateSubscription(dbSubscription);
 
-        _logger.LogInformation("Subscription updated: {SubscriptionId}", stripeSubscription.Id);
+        logger.LogInformation("Subscription updated: {SubscriptionId}", stripeSubscription.Id);
     }
 
     private async Task HandleCustomerSubscriptionDeletedAsync(Event stripeEvent)
     {
         var stripeSubscription = stripeEvent.Data.Object as Stripe.Subscription;
-        var dbSubscription = await _subscriptionService.GetSubscriptionByStripeSubscriptionId(stripeSubscription.Id);
+        var dbSubscription = await subscriptionService.GetSubscriptionByStripeSubscriptionId(stripeSubscription.Id);
 
         if (dbSubscription == null)
         {
-            _logger.LogError("Subscription not found: {SubscriptionId}", stripeSubscription.Id);
+            logger.LogError("Subscription not found: {SubscriptionId}", stripeSubscription.Id);
             return;
         }
 
         var subscriptionItem = stripeSubscription.Items.Data[0];
-        await _subscriptionService.CancelSubscription(
+        await subscriptionService.CancelSubscription(
             dbSubscription.Id,
             "canceled",
             subscriptionItem.CurrentPeriodEnd);
 
-        _logger.LogInformation("Subscription canceled: {SubscriptionId}", stripeSubscription.Id);
+        logger.LogInformation("Subscription canceled: {SubscriptionId}", stripeSubscription.Id);
     }
 
     private async Task HandleInvoicePaymentSucceededAsync(Event stripeEvent)
@@ -185,25 +173,25 @@ public class StripeWebhookController(IConfiguration configuration, ILogger<Strip
         
         if (string.IsNullOrEmpty(subscriptionId))
         {
-            _logger.LogError("No subscription found in invoice: {InvoiceId}", invoice.Id);
+            logger.LogError("No subscription found in invoice: {InvoiceId}", invoice.Id);
             return;
         }
         
-        var subscription = await _subscriptionService.GetSubscriptionByStripeSubscriptionId(subscriptionId);
+        var subscription = await subscriptionService.GetSubscriptionByStripeSubscriptionId(subscriptionId);
 
         if (subscription == null)
         {
-            _logger.LogError("Subscription not found in database: {SubscriptionId}", subscriptionId);
+            logger.LogError("Subscription not found in database: {SubscriptionId}", subscriptionId);
             return;
         }
 
         // Update subscription status if needed
         if (subscription.Status != "active")
         {
-            await _subscriptionService.UpdateSubscriptionStatus(subscription.Id, "active");
+            await subscriptionService.UpdateSubscriptionStatus(subscription.Id, "active");
         }
 
-        _logger.LogInformation("Payment succeeded for subscription: {SubscriptionId}", subscriptionId);
+        logger.LogInformation("Payment succeeded for subscription: {SubscriptionId}", subscriptionId);
     }
 
     private async Task HandleInvoicePaymentFailedAsync(Event stripeEvent)
@@ -231,22 +219,22 @@ public class StripeWebhookController(IConfiguration configuration, ILogger<Strip
         
         if (string.IsNullOrEmpty(subscriptionId))
         {
-            _logger.LogError("No subscription found in invoice: {InvoiceId}", invoice.Id);
+            logger.LogError("No subscription found in invoice: {InvoiceId}", invoice.Id);
             return;
         }
         
-        var subscription = await _subscriptionService.GetSubscriptionByStripeSubscriptionId(subscriptionId);
+        var subscription = await subscriptionService.GetSubscriptionByStripeSubscriptionId(subscriptionId);
 
         if (subscription == null)
         {
-            _logger.LogError("Subscription not found in database: {SubscriptionId}", subscriptionId);
+            logger.LogError("Subscription not found in database: {SubscriptionId}", subscriptionId);
             return;
         }
 
         // Update subscription status
-        await _subscriptionService.UpdateSubscriptionStatus(subscription.Id, "past_due");
+        await subscriptionService.UpdateSubscriptionStatus(subscription.Id, "past_due");
 
-        _logger.LogWarning("Payment failed for subscription: {SubscriptionId}", subscriptionId);
+        logger.LogWarning("Payment failed for subscription: {SubscriptionId}", subscriptionId);
 
         // TODO: Implement logic to notify the user about the failed payment
     }

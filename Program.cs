@@ -8,6 +8,7 @@ using Serilog.Events;
 using Stripe;
 using SuperInvestor.Features.App.Components;
 using SuperInvestor.Features.Common.Data;
+using SuperInvestor.Features.Common.Services;
 using SuperInvestor.Features.Identity.Data;
 using SuperInvestor.Features.Companies.Services;
 using SuperInvestor.Features.Identity.Services;
@@ -17,11 +18,14 @@ using SuperInvestor.Features.UI.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Validate all required environment variables
+EnvironmentHelper.ValidateEnvironmentVariables();
+
 // Configure Serilog
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Warning() // Set minimum level to Warning
     .MinimumLevel.Override("Microsoft", LogEventLevel.Error) // Override Microsoft logs to Error
-    .WriteTo.PostgreSQL(builder.Configuration.GetConnectionString("DefaultConnection"), "Logs", needAutoCreateTable: true)
+    .WriteTo.PostgreSQL(EnvironmentHelper.ConnectionString, "Logs", needAutoCreateTable: true)
     .CreateLogger();
 
 builder.Host.UseSerilog();
@@ -41,8 +45,8 @@ builder.Services.AddAuthentication(options =>
     })
     .AddGoogle(googleOptions =>
     {
-        googleOptions.ClientId = builder.Configuration["Authentication:Google:ClientId"];
-        googleOptions.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"];
+        googleOptions.ClientId = EnvironmentHelper.GoogleClientId;
+        googleOptions.ClientSecret = EnvironmentHelper.GoogleClientSecret;
     })
     .AddIdentityCookies();
 
@@ -52,16 +56,15 @@ builder.Services.AddIdentityCore<ApplicationUser>(options => options.SignIn.Requ
     .AddSignInManager()
     .AddDefaultTokenProviders();
 
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
-    options.UseNpgsql(connectionString));
+    options.UseNpgsql(EnvironmentHelper.ConnectionString));
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
 builder.Services.AddOptions();
 builder.Services.AddHttpClient<ResendClient>();
 builder.Services.Configure<ResendClientOptions>(o =>
 {
-    o.ApiToken = builder.Configuration["Resend:ApiKey"];
+    o.ApiToken = EnvironmentHelper.ResendApiKey;
 });
 builder.Services.AddScoped<IResend, ResendClient>();
 builder.Services.AddScoped<IEmailSender<ApplicationUser>, ResendEmailSender>();
@@ -86,7 +89,7 @@ builder.Services.AddHttpContextAccessor();
 
 builder.Services.AddControllers();
 
-StripeConfiguration.ApiKey = builder.Configuration["StripeApiKey"];
+StripeConfiguration.ApiKey = EnvironmentHelper.StripeApiKey;
 
 var app = builder.Build();
 

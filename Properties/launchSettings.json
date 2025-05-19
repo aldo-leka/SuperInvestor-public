@@ -4,7 +4,18 @@
       "commandName": "Project",
       "launchBrowser": true,
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "GOOGLE_CLIENT_ID": "",
+        "GOOGLE_CLIENT_SECRET": "",
+        "TURNSTILE_SITE_KEY": "",
+        "TURNSTILE_SECRET_KEY": "",
+        "RESEND_API_KEY": "",
+        "RESEND_SENDER_EMAIL": "",
+        "RESEND_SENDER_NAME": "",
+        "STRIPE_API_KEY": "",
+        "STRIPE_PRICE_ID": "",
+        "STRIPE_WEBHOOK_SECRET": "",
+        "CONNECTION_STRING": ""
       },
       "dotnetRunMessages": true,
       "applicationUrl": "http://localhost:5036"

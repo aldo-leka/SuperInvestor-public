@@ -1,14 +1,15 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Resend;
+using SuperInvestor.Features.Common.Services;
 using SuperInvestor.Features.Identity.Data;
 
 namespace SuperInvestor.Features.Identity.Services;
 
-public class ResendEmailSender(IResend resend, IConfiguration configuration) : IEmailSender<ApplicationUser>
+public class ResendEmailSender(IResend resend) : IEmailSender<ApplicationUser>
 {
     public async Task SendConfirmationLinkAsync(ApplicationUser user, string email, string confirmationLink)
     {
-        var sender = configuration["Resend:SenderEmail"];
+        var sender = EnvironmentHelper.ResendSenderEmail;
         var emailTemplate = @$"
             <div style='font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #F0F4F8; border-radius: 10px;'>
                 <h1 style='color: #1A3A5A; text-align: center;'>Welcome to Super Investor!</h1>
@@ -42,7 +43,7 @@ public class ResendEmailSender(IResend resend, IConfiguration configuration) : I
 
     public async Task SendPasswordResetCodeAsync(ApplicationUser user, string email, string resetCode)
     {
-        var sender = configuration["Resend:SenderEmail"];
+        var sender = EnvironmentHelper.ResendSenderEmail;
         var emailTemplate = @$"
             <div style='font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #F0F4F8; border-radius: 10px;'>
                 <h1 style='color: #1A3A5A; text-align: center;'>Password Reset Request</h1>
@@ -73,7 +74,7 @@ public class ResendEmailSender(IResend resend, IConfiguration configuration) : I
 
     public async Task SendPasswordResetLinkAsync(ApplicationUser user, string email, string resetLink)
     {
-        var sender = configuration["Resend:SenderEmail"];
+        var sender = EnvironmentHelper.ResendSenderEmail;
         var emailTemplate = @$"
             <div style='font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #F0F4F8; border-radius: 10px;'>
                 <h1 style='color: #1A3A5A; text-align: center;'>Reset Your Super Investor Password</h1>

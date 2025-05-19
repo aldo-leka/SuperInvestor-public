@@ -1,4 +1,4 @@
-@inject IConfiguration Configuration
+@using SuperInvestor.Features.Common.Services
 
 <div class="cf-turnstile mb-3" data-sitekey="@SiteKey" data-callback="turnstileCallback"></div>
 
@@ -25,5 +25,5 @@
 </script>
 
 @code {
-    private string SiteKey => Configuration["Turnstile:SiteKey"];
+    private string SiteKey => EnvironmentHelper.TurnstileSiteKey;
 }

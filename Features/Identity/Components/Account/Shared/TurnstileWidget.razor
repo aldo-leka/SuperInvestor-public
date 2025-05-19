@@ -1,5 +1,5 @@
 @inject IJSRuntime JSRuntime
-@inject IConfiguration Configuration
+@using SuperInvestor.Features.Common.Services
 @implements IAsyncDisposable
 
 <div @ref="turnstileElement"></div>
@@ -18,7 +18,7 @@
             
             var dotNetRef = DotNetObjectReference.Create(this);
             widgetId = await JSRuntime.InvokeAsync<string>("ts.renderTurnstile", 
-                turnstileElement, Configuration["Turnstile:SiteKey"], dotNetRef);
+                turnstileElement, EnvironmentHelper.TurnstileSiteKey, dotNetRef);
             Console.WriteLine($"Turnstile widget id: {widgetId}");
         }
     }

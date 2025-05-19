@@ -1,24 +1,23 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using SuperInvestor.Features.Common.Services;
 
 namespace SuperInvestor.Features.Identity.Services;
 
 public class TurnstileService
 {
     private readonly HttpClient _httpClient;
-    private readonly string _secretKey;
     
-    public TurnstileService(HttpClient httpClient, IConfiguration config)
+    public TurnstileService(HttpClient httpClient)
     {
         _httpClient = httpClient;
-        _secretKey = config["Turnstile:SecretKey"];
     }
     
     public async Task<bool> VerifyTokenAsync(string token, string? remoteIp = null)
     {
         var formData = new FormUrlEncodedContent(new[]
         {
-            new KeyValuePair<string, string>("secret", _secretKey),
+            new KeyValuePair<string, string>("secret", EnvironmentHelper.TurnstileSecretKey),
             new KeyValuePair<string, string>("response", token),
             new KeyValuePair<string, string>("remoteip", remoteIp ?? "")
         });
