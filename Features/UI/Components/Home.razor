@@ -1,9 +1,10 @@
 ﻿@page "/"
 
+@using System.Security.Claims
+
 @inject NavigationManager NavigationManager
 @inject AuthenticationStateProvider AuthenticationStateProvider
-@inject UserService UserService
-@inject SubscriptionService SubscriptionService
+@inject IUserService UserService
 
 <PageTitle>Home</PageTitle>
 
@@ -79,6 +80,7 @@
                 <div class="col-md-8 mx-auto text-center">
                     <h1 class="display-4 mb-3">Streamline Your Financial Research</h1>
                     <p class="lead mb-4">Access, analyze, and annotate SEC filings for all US-listed companies in one place.</p>
+                    <LoveCountBadge />
                     <SuperButton OnClick="@(() => NavigationManager.NavigateTo("Account/Register"))" CssClass="btn btn-primary btn-lg">Start Your Research Now</SuperButton>
                 </div>
             </section>
@@ -153,8 +155,11 @@
         var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
         if (auth.User.Identity.IsAuthenticated)
         {
-            var user = await UserService.GetUser();
-            hasActiveSubscription = await SubscriptionService.HasActiveSubscription(user);
+            var userId = auth.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!string.IsNullOrEmpty(userId))
+            {
+                hasActiveSubscription = await UserService.UserHasActiveSubscriptionAsync(userId);
+            }
         }
     }
 }

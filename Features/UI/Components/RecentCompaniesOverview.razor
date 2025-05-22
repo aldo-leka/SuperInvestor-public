@@ -1,7 +1,9 @@
-﻿@inject NavigationManager NavigationManager
-@inject UserService UserService
-@inject CompanyTickerService CompanyTickerService
-@inject NoteService NoteService
+﻿@using System.Security.Claims
+
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject ICompanyTickerService CompanyTickerService
+@inject INoteService NoteService
 
 <div class="container mt-4">
     <h1 class="mb-4">Your Recent Research</h1>
@@ -46,27 +48,33 @@
     protected override async Task OnInitializedAsync()
     {
         var tickers = await CompanyTickerService.GetTickersAsync();
-        var user = await UserService.GetUser();
-
-        var notes = await NoteService.GetNotes(user.Id);
-        var recentNotes = notes
-            .GroupBy(n => n.Ticker)
-            .Select(g => new 
+        var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        if (auth.User.Identity.IsAuthenticated)
+        {
+            var userId = auth.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!string.IsNullOrEmpty(userId))
             {
-                Ticker = g.Key,
-                LastNoteDate = g.Max(n => n.UpdatedAt)
-            })
-            .OrderByDescending(c => c.LastNoteDate)
-            .Take(6);
+                var notes = await NoteService.GetNotes(userId);
+                var recentNotes = notes
+                    .GroupBy(n => n.Ticker)
+                    .Select(g => new
+                    {
+                        Ticker = g.Key,
+                        LastNoteDate = g.Max(n => n.UpdatedAt)
+                    })
+                    .OrderByDescending(c => c.LastNoteDate)
+                    .Take(6);
 
-        recentCompanies = recentNotes
-            .Select(n => new RecentCompany
-            {
-                Ticker = n.Ticker,
-                Name = tickers.FirstOrDefault(t => t.Symbol == n.Ticker)?.Name ?? "Unknown",
-                LastNoteDate = n.LastNoteDate
-            })
-            .ToList();
+                recentCompanies = recentNotes
+                    .Select(n => new RecentCompany
+                    {
+                        Ticker = n.Ticker,
+                        Name = tickers.FirstOrDefault(t => t.Symbol == n.Ticker)?.Name ?? "Unknown",
+                        LastNoteDate = n.LastNoteDate
+                    })
+                    .ToList();
+            }
+        }
     }
 
     private class RecentCompany

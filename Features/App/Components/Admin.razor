@@ -1,20 +1,18 @@
 ﻿@page "/admin"
 
-@using Microsoft.AspNetCore.Authorization
 @using Microsoft.EntityFrameworkCore
 @using SuperInvestor.Features.Identity.Data
 @using SuperInvestor.Features.Identity.Services
 @using SuperInvestor.Features.Notes.Services
 @using SuperInvestor.Features.Subscription.Services
 @using SuperInvestor.Features.Companies.Services
-@using System.Linq
+@using SuperInvestor.Features.Subscription.Data
 
-@inject UserService UserService
-@inject SubscriptionService SubscriptionService
-@inject NoteService NoteService
-@inject CompanyTickerService CompanyTickerService
-@inject FilingCategoryService FilingCategoryService
-@inject IConfiguration Configuration
+@inject IUserService UserService
+@inject ISubscriptionService SubscriptionService
+@inject INoteService NoteService
+@inject ICompanyTickerService CompanyTickerService
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 
 @attribute [Authorize(Roles = "Admin")]
 
@@ -56,7 +54,9 @@
                             <td>
                                 @if (user.Subscription != null)
                                 {
-                                    <span class="text-success">Active</span>
+                                    <span class="@GetStatusCssClass(user.Subscription.Status.ToString())">
+                                        @FormatSubscriptionStatus(user.Subscription.Status.ToString())
+                                    </span>
                                 }
                                 else
                                 {
@@ -75,12 +75,26 @@
                                 <td colspan="6">
                                     <div class="ms-4">
                                         <strong>Subscription Details:</strong><br />
-                                        Plan: @user.Subscription.PlanName<br />
-                                        Status: @user.Subscription.Status<br />
-                                        Start Date: @user.Subscription.StartDate?.ToShortDateString()<br />
-                                        Current Period End: @user.Subscription.CurrentPeriodEnd?.ToShortDateString()<br />
-                                        Amount: @user.Subscription.PlanAmount @user.Subscription.PlanCurrency<br />
-                                        Billing Cycle: @user.Subscription.PlanInterval
+                                        Price ID: @user.Subscription.PriceId<br />
+                                        Status: @FormatSubscriptionStatus(user.Subscription.Status.ToString())<br />
+                                        @if (user.Subscription.PastDue)
+                                        {
+                                            <span class="text-danger">Past Due</span>
+                                            <br />
+                                            <span>Failed Payments: @user.Subscription.PaymentFailedCount</span>
+                                            <br />
+                                        }
+                                        Current Period: @user.Subscription.CurrentPeriodStart.ToLocalTime().ToShortDateString() - @user.Subscription.CurrentPeriodEnd.ToLocalTime().ToShortDateString()<br />
+                                        @if (user.Subscription.CanceledAt.HasValue)
+                                        {
+                                            <span>Canceled At: @user.Subscription.CanceledAt.Value.ToLocalTime().ToShortDateString()</span><br />
+                                        }
+                                        Created: @user.Subscription.CreatedAt.ToLocalTime().ToShortDateString()<br />
+                                        Last Updated: @user.Subscription.UpdatedAt.ToLocalTime().ToShortDateString()<br />
+                                        @if (!string.IsNullOrEmpty(user.Subscription.LastInvoiceId))
+                                        {
+                                            <span>Last Invoice: @user.Subscription.LastInvoiceId</span>
+                                        }
                                     </div>
                                 </td>
                             </tr>
@@ -130,14 +144,14 @@
 
     protected override async Task OnInitializedAsync()
     {
-        users = await UserService.GetAllUsers();
+        users = await UserService.GetAllAsync();
         foreach (var user in users)
         {
             var notes = await NoteService.GetNotes(user.Id);
             userNotes[user.Id] = await ProcessNotes(notes);
             
             // Load subscription information
-            user.Subscription = await SubscriptionService.GetSubscription(user.Id);
+            user.Subscription = await SubscriptionService.GetByUserIdAsync(user.Id);
         }
     }
 
@@ -167,43 +181,75 @@
 
     private async Task GrantFreeAccess(string userId)
     {
-        var subscription = await SubscriptionService.GetSubscription(userId);
+        var subscription = await SubscriptionService.GetByUserIdAsync(userId);
         var oneYearFromNow = DateTime.UtcNow.AddYears(1);
 
         if (subscription != null)
         {
+            // Update existing subscription
             subscription.CurrentPeriodEnd = oneYearFromNow;
-            subscription.Status = "active";
-            await SubscriptionService.UpdateSubscription(subscription);
+            subscription.Status = SubscriptionStatus.Active;
+            
+            await using var db = await DbFactory.CreateDbContextAsync();
+            db.UserSubscriptions.Update(subscription);
+            await db.SaveChangesAsync();
         }
         else
         {
-            var newSubscription = new SuperInvestor.Features.Subscription.Data.Subscription
+            var newSubscription = new UserSubscription
             {
+                Id = Guid.NewGuid().ToString(),
                 UserId = userId,
+                StripeSubscriptionId = "admin_granted_" + Guid.NewGuid().ToString("N"),
                 StripeCustomerId = "admin_granted",
-                StripeSubscriptionId = "admin_granted",
-                Status = "active",
-                PlanId = "free_plan_id",
+                Status = SubscriptionStatus.Active,
+                PriceId = "admin_free_plan", 
+                Quantity = 1,
+                CurrentPeriodStart = DateTime.UtcNow,
                 CurrentPeriodEnd = oneYearFromNow,
-                StartDate = DateTime.UtcNow,
-                EndDate = oneYearFromNow,
-                PlanName = "Admin Granted Free Plan",
-                PlanAmount = 0,
-                PlanCurrency = "USD",
-                PlanInterval = "year"
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
             };
-            await SubscriptionService.CreateSubscription(newSubscription);
+            
+            await using var db = await DbFactory.CreateDbContextAsync();
+            await db.UserSubscriptions.AddAsync(newSubscription);
+            await db.SaveChangesAsync();
         }
 
-        // Refresh the user list and update the subscription information
-        users = await UserService.GetAllUsers();
-        foreach (var user in users)
-        {
-            user.Subscription = await SubscriptionService.GetSubscription(user.Id);
-        }
+        // Refresh the user list
+        users = await UserService.GetAllAsync();
 
         StateHasChanged();
+    }
+
+    private string GetStatusCssClass(string status)
+    {
+        return status?.ToLower() switch
+        {
+            "active" => "text-success",
+            "trialing" => "text-primary",
+            "past_due" => "text-warning",
+            "canceled" => "text-danger",
+            "incomplete" => "text-secondary",
+            "incomplete_expired" => "text-danger",
+            "unpaid" => "text-danger",
+            _ => "text-muted"
+        };
+    }
+
+    private static string FormatSubscriptionStatus(string status)
+    {
+        return status?.ToLower() switch
+        {
+            "active" => "Active",
+            "trialing" => "Trial",
+            "past_due" => "Past Due",
+            "canceled" => "Canceled",
+            "incomplete" => "Incomplete",
+            "incomplete_expired" => "Expired",
+            "unpaid" => "Unpaid",
+            _ => status
+        };
     }
 
     private class NoteViewModel

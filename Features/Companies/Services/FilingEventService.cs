@@ -1,6 +1,6 @@
 ﻿namespace SuperInvestor.Features.Companies.Services;
 
-public class FilingEventService
+public class FilingEventService : IFilingEventService
 {
     public event Action<int, int, string> TextSelected;
     public event Action TextUnselected;

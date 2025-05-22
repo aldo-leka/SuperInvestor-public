@@ -4,27 +4,23 @@ using SuperInvestor.Features.Companies.Models;
 
 namespace SuperInvestor.Features.Companies.Services;
 
-public class CompanyTickerService(IHttpClientFactory httpClientFactory, IMemoryCache memoryCache)
+public class CompanyTickerService(IHttpClientFactory httpClientFactory, IMemoryCache memoryCache) : ICompanyTickerService
 {
-    private readonly IHttpClientFactory _httpClientFactory = httpClientFactory;
-    private readonly IMemoryCache _memoryCache = memoryCache;
     private const string CacheKey = "CompanyTickers";
 
     public async Task<IEnumerable<Ticker>> GetTickersAsync()
     {
-        if (!_memoryCache.TryGetValue(CacheKey, out IEnumerable<Ticker> tickers))
-        {
-            tickers = await FetchTickersFromApiAsync();
-            var cacheEntryOptions = new MemoryCacheEntryOptions()
-                .SetAbsoluteExpiration(TimeSpan.FromDays(1));
-            _memoryCache.Set(CacheKey, tickers, cacheEntryOptions);
-        }
+        if (memoryCache.TryGetValue(CacheKey, out IEnumerable<Ticker> tickers)) return tickers;
+        tickers = await FetchTickersFromApiAsync();
+        var cacheEntryOptions = new MemoryCacheEntryOptions()
+            .SetAbsoluteExpiration(TimeSpan.FromDays(1));
+        memoryCache.Set(CacheKey, tickers, cacheEntryOptions);
         return tickers;
     }
 
     private async Task<IEnumerable<Ticker>> FetchTickersFromApiAsync()
     {
-        var client = _httpClientFactory.CreateClient();
+        var client = httpClientFactory.CreateClient();
         client.DefaultRequestHeaders.TryAddWithoutValidation(HeaderNames.UserAgent, "Lekasoft aldo@lekasoft.com");
         var response = await client.GetFromJsonAsync<Dictionary<string, Ticker>>("https://www.sec.gov/files/company_tickers.json");
         return response.Values.AsEnumerable();
@@ -38,7 +34,7 @@ public class CompanyTickerService(IHttpClientFactory httpClientFactory, IMemoryC
 
     public async Task<Submission> GetSubmission(string cik)
     {
-        var client = _httpClientFactory.CreateClient();
+        var client = httpClientFactory.CreateClient();
         client.DefaultRequestHeaders.TryAddWithoutValidation(HeaderNames.UserAgent, "Lekasoft aldo@lekasoft.com");
 
         var paddedCik = cik.PadLeft(10, '0');

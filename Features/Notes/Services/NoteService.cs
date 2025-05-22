@@ -4,7 +4,7 @@ using SuperInvestor.Features.Notes.Data;
 
 namespace SuperInvestor.Features.Notes.Services;
 
-public class NoteService(IDbContextFactory<ApplicationDbContext> factory)
+public class NoteService(IDbContextFactory<ApplicationDbContext> factory) : INoteService
 {
     public event EventHandler<string> NotesChanged;
 

@@ -1,6 +1,5 @@
 ﻿@inject IJSRuntime JSRuntime
-@inject NavigationManager NavigationManager
-@inject ToastService ToastService
+@inject IToastService ToastService
 
 <div class="modal @(Show ? "show d-block" : "d-none") centered-modal" tabindex="-1" role="dialog" @onclick="CloseModalOnOutsideClick">
     <div class="modal-dialog" role="document" @onclick:stopPropagation>

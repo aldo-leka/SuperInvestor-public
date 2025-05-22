@@ -4,15 +4,8 @@ using SuperInvestor.Features.Common.Services;
 
 namespace SuperInvestor.Features.Identity.Services;
 
-public class TurnstileService
+public class TurnstileService(HttpClient httpClient)
 {
-    private readonly HttpClient _httpClient;
-    
-    public TurnstileService(HttpClient httpClient)
-    {
-        _httpClient = httpClient;
-    }
-    
     public async Task<bool> VerifyTokenAsync(string token, string? remoteIp = null)
     {
         var formData = new FormUrlEncodedContent(new[]
@@ -22,7 +15,7 @@ public class TurnstileService
             new KeyValuePair<string, string>("remoteip", remoteIp ?? "")
         });
         
-        var response = await _httpClient.PostAsync(
+        var response = await httpClient.PostAsync(
             "https://challenges.cloudflare.com/turnstile/v0/siteverify", 
             formData);
             

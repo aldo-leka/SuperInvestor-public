@@ -5,23 +5,19 @@ using SuperInvestor.Features.Research.Services;
 
 namespace SuperInvestor.Features.Research.Services;
 
-public class ShareService(ResearchService researchService, NoteService noteService, NavigationManager navigationManager)
+public class ShareService(IResearchService researchService, INoteService noteService, NavigationManager navigationManager) : IShareService
 {
-    private readonly ResearchService _researchService = researchService;
-    private readonly NoteService _noteService = noteService;
-    private readonly NavigationManager _navigationManager = navigationManager;
-
     public async Task<string> GenerateShareLinkForResearch(string userId, string ticker, string accessionNumber)
     {
-        var existingResearch = await _researchService.GetResearch(userId, ticker, accessionNumber);
+        var existingResearch = await researchService.GetResearch(userId, ticker, accessionNumber);
         if (existingResearch == null)
         {
-            var notes = await _noteService.GetNotes(userId, ticker, accessionNumber);
+            var notes = await noteService.GetNotes(userId, ticker, accessionNumber);
 
             if (notes.Any())
             {
-                var research = await _researchService.AddResearch(userId, ticker, accessionNumber);
-                return _navigationManager.BaseUri + $"r/{research.ShortId}";
+                var research = await researchService.AddResearch(userId, ticker, accessionNumber);
+                return navigationManager.BaseUri + $"r/{research.ShortId}";
             }
             else
             {
@@ -30,21 +26,18 @@ public class ShareService(ResearchService researchService, NoteService noteServi
         }
         else
         {
-            return _navigationManager.BaseUri + $"r/{existingResearch.ShortId}";
+            return navigationManager.BaseUri + $"r/{existingResearch.ShortId}";
         }
     }
 
     public async Task<string> GenerateShareLinkForNote(Guid noteId)
     {
-        var note = await _noteService.GetNote(noteId);
-        if (note != null)
-        {
-            var research = await _researchService.GetResearch(note.UserId, note.Ticker, note.AccessionNumber);
-            research ??= await _researchService.AddResearch(note.UserId, note.Ticker, note.AccessionNumber);
+        var note = await noteService.GetNote(noteId);
+        if (note == null) return null;
+        var research = await researchService.GetResearch(note.UserId, note.Ticker, note.AccessionNumber);
+        research ??= await researchService.AddResearch(note.UserId, note.Ticker, note.AccessionNumber);
 
-            return _navigationManager.BaseUri + $"r/{research.ShortId}/n/{note.ShortId}";
-        }
+        return navigationManager.BaseUri + $"r/{research.ShortId}/n/{note.ShortId}";
 
-        return null;
     }
 }

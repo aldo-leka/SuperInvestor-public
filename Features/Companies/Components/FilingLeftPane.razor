@@ -1,23 +1,16 @@
-﻿@using Microsoft.EntityFrameworkCore
-@using SuperInvestor.Features.Companies.Models
-@using SuperInvestor.Features.Identity.Services
-@using SuperInvestor.Features.Notes.Services
-@using SuperInvestor.Features.Research.Components
-@using SuperInvestor.Features.Research.Services
-@using SuperInvestor.Features.UI.Components
-@using SuperInvestor.Features.UI.Services
+﻿@using Microsoft.AspNetCore.Identity
+@using System.Security.Claims
 
 @implements IDisposable
 
 @inject NavigationManager NavigationManager
-@inject ShareService ShareService
+@inject IShareService ShareService
 @inject IJSRuntime JSRuntime
 @inject AuthenticationStateProvider AuthenticationStateProvider
-@inject UserService UserService
-@inject ToastService ToastService
-@inject NoteService NoteService
-@inject FilingCategoryService FilingCategoryService
-@inject ResearchService ResearchService
+@inject IToastService ToastService
+@inject INoteService NoteService
+@inject IFilingCategoryService FilingCategoryService
+@inject IResearchService ResearchService
 
 <ShareResearchModal @bind-Show="showShareModal" ShareableUrl="@shareableUrl" />
 
@@ -108,11 +101,14 @@
             var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
             if (auth.User.Identity.IsAuthenticated)
             {
-                var user = await UserService.GetUser();
-                var research = await ResearchService.GetResearch(ResearchShortId);
-                if (research.UserId == user.Id)
+                var userId = auth.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (!string.IsNullOrEmpty(userId))
                 {
-                    showContinueResearchButton = true;
+                    var research = await ResearchService.GetResearch(ResearchShortId);
+                    if (research.UserId == userId)
+                    {
+                        showContinueResearchButton = true;
+                    }
                 }
             }
         }
@@ -129,11 +125,9 @@
 
     private async void OnNotesChanged(object sender, string changedAccessionNumber)
     {
-        if (changedAccessionNumber == AccessionNumber)
-        {
-            await CheckHasNotes();
-            StateHasChanged();
-        }
+        if (changedAccessionNumber != AccessionNumber) return;
+        await CheckHasNotes();
+        StateHasChanged();
     }
 
     private async Task CheckHasNotes()
@@ -141,8 +135,11 @@
         var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
         if (auth.User.Identity.IsAuthenticated)
         {
-            var user = await UserService.GetUser();
-            hasNotes = await NoteService.HasNotesForFiling(user.Id, Ticker.Symbol, AccessionNumber);
+            var userId = auth.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!string.IsNullOrEmpty(userId))
+            {
+                hasNotes = await NoteService.HasNotesForFiling(userId, Ticker.Symbol, AccessionNumber);
+            }
         }
     }
 
@@ -178,9 +175,16 @@
 
     private async Task ShareResearch()
     {
-        var user = await UserService.GetUser();
-        shareableUrl = await ShareService.GenerateShareLinkForResearch(user.Id, Ticker.Symbol, AccessionNumber);
-        showShareModal = true;
+        var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        if (auth.User.Identity.IsAuthenticated)
+        {
+            var userId = auth.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!string.IsNullOrEmpty(userId))
+            {
+                shareableUrl = await ShareService.GenerateShareLinkForResearch(userId, Ticker.Symbol, AccessionNumber);
+                showShareModal = true;
+            }
+        }
     }
 
     private async Task OnFontSizeChange(ChangeEventArgs e)

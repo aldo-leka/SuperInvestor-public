@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Components;
 
 namespace SuperInvestor.Features.Companies.Services;
 
-public class HtmlCleanerService(NavigationManager navigationManager)
+public class HtmlCleanerService(NavigationManager navigationManager) : IHtmlCleanerService
 {
     public void CleanHtmlDocument(HtmlDocument htmlDocument, Uri secUri)
     {
@@ -70,26 +70,22 @@ public class HtmlCleanerService(NavigationManager navigationManager)
     private static void RemoveHiddenDivs(HtmlDocument htmlDocument)
     {
         var hiddenDivs = htmlDocument.DocumentNode.SelectNodes("//div[@style='display:none']");
-        if (hiddenDivs != null)
+        if (hiddenDivs == null) return;
+        foreach (var div in hiddenDivs)
         {
-            foreach (var div in hiddenDivs)
-            {
-                div.Remove();
-            }
+            div.Remove();
         }
     }
 
     private static void RemoveTags(HtmlDocument htmlDocument, string tagName, Func<HtmlNode, bool> predicate = null)
     {
         var nodes = htmlDocument.DocumentNode.SelectNodes($"//{tagName}");
-        if (nodes != null)
+        if (nodes == null) return;
+        foreach (var node in nodes)
         {
-            foreach (var node in nodes)
+            if (predicate == null || predicate(node))
             {
-                if (predicate == null || predicate(node))
-                {
-                    node.Remove();
-                }
+                node.Remove();
             }
         }
     }
@@ -97,27 +93,23 @@ public class HtmlCleanerService(NavigationManager navigationManager)
     private static void RemoveComments(HtmlDocument htmlDocument)
     {
         var comments = htmlDocument.DocumentNode.SelectNodes("//comment()");
-        if (comments != null)
+        if (comments == null) return;
+        foreach (var comment in comments)
         {
-            foreach (var comment in comments)
-            {
-                comment.Remove();
-            }
+            comment.Remove();
         }
     }
 
-    private void FixHrefTags(HtmlDocument htmlDocument)
+    public void FixHrefTags(HtmlDocument htmlDocument)
     {
         var aTags = htmlDocument.DocumentNode.SelectNodes("//a");
-        if (aTags != null)
+        if (aTags == null) return;
+        foreach (var aTag in aTags)
         {
-            foreach (var aTag in aTags)
-            {
-                aTag.Attributes.Remove("style");
-                var hrefValue = aTag.GetAttributeValue("href", string.Empty);
-                var newHrefValue = $"{navigationManager.Uri}{hrefValue}";
-                aTag.SetAttributeValue("href", newHrefValue);
-            }
+            aTag.Attributes.Remove("style");
+            var hrefValue = aTag.GetAttributeValue("href", string.Empty);
+            var newHrefValue = $"{navigationManager.Uri}{hrefValue}";
+            aTag.SetAttributeValue("href", newHrefValue);
         }
     }
 
@@ -131,37 +123,31 @@ public class HtmlCleanerService(NavigationManager navigationManager)
     private static void FixImageUrls(HtmlDocument htmlDocument, Uri secUri)
     {
         var images = htmlDocument.DocumentNode.SelectNodes("//img[@src]");
-        if (images != null)
+        if (images == null) return;
+        foreach (var img in images)
         {
-            foreach (var img in images)
-            {
-                var src = img.GetAttributeValue("src", string.Empty);
-                if (!string.IsNullOrEmpty(src))
-                {
-                    var imgUrl = $"https://{secUri.Host}{string.Concat(secUri.Segments.SkipLast(1))}{src}";
-                    img.SetAttributeValue("src", imgUrl);
-                }
-            }
+            var src = img.GetAttributeValue("src", string.Empty);
+            if (string.IsNullOrEmpty(src)) continue;
+            var imgUrl = $"https://{secUri.Host}{string.Concat(secUri.Segments.SkipLast(1))}{src}";
+            img.SetAttributeValue("src", imgUrl);
         }
     }
 
     private static void RemoveHtmlHeadBodyTags(HtmlDocument htmlDocument)
     {
         var htmlNode = htmlDocument.DocumentNode.SelectSingleNode("//html");
-        if (htmlNode != null)
+        if (htmlNode == null) return;
+        // Move all children of <body> to the root
+        var bodyNode = htmlNode.SelectSingleNode("//body");
+        if (bodyNode != null)
         {
-            // Move all children of <body> to the root
-            var bodyNode = htmlNode.SelectSingleNode("//body");
-            if (bodyNode != null)
+            foreach (var child in bodyNode.ChildNodes.ToList())
             {
-                foreach (var child in bodyNode.ChildNodes.ToList())
-                {
-                    htmlDocument.DocumentNode.AppendChild(child);
-                }
+                htmlDocument.DocumentNode.AppendChild(child);
             }
-
-            // Remove <html>, <head>, and <body> tags
-            htmlNode.Remove();
         }
+
+        // Remove <html>, <head>, and <body> tags
+        htmlNode.Remove();
     }
 }

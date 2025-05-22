@@ -9,13 +9,13 @@
 
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavigationManager
-@inject HtmlCleanerService HtmlCleaner
-@inject NoteHighlightService NoteHighlightService
-@inject CompanyTickerService CompanyTickerService
-@inject UserService UserService
-@inject ShareService ShareService
-@inject ResearchService ResearchService
-@inject FilingEventService FilingEventService
+@inject IHtmlCleanerService HtmlCleaner
+@inject INoteHighlightService NoteHighlightService
+@inject ICompanyTickerService CompanyTickerService
+@inject IUserService UserService
+@inject IShareService ShareService
+@inject IResearchService ResearchService
+@inject IFilingEventService FilingEventService
 
 <PageTitle>@(isLoading ? "Loading..." : $"{filing} - {ticker?.Symbol} Shared Research")</PageTitle>
 

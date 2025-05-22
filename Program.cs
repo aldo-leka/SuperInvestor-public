@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Resend;
 using Serilog;
 using Serilog.Events;
-using Stripe;
 using SuperInvestor.Features.App.Components;
 using SuperInvestor.Features.Common.Data;
 using SuperInvestor.Features.Common.Services;
@@ -14,6 +13,7 @@ using SuperInvestor.Features.Companies.Services;
 using SuperInvestor.Features.Identity.Services;
 using SuperInvestor.Features.Notes.Services;
 using SuperInvestor.Features.Research.Services;
+using SuperInvestor.Features.Subscription.Services;
 using SuperInvestor.Features.UI.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -72,33 +72,31 @@ builder.Services.AddScoped<IEmailSender<ApplicationUser>, ResendEmailSender>();
 builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<YahooClient>();
-builder.Services.AddScoped<HtmlCleanerService>();
-builder.Services.AddScoped<FilingEventService>();
-builder.Services.AddScoped<NoteHighlightService>();
-builder.Services.AddScoped<CompanyTickerService>();
-builder.Services.AddScoped<UserService>();
-builder.Services.AddScoped<SuperInvestor.Features.Subscription.Services.SubscriptionService>();
-builder.Services.AddScoped<ToastService>();
-builder.Services.AddScoped<ShareService>();
-builder.Services.AddScoped<NoteService>();
-builder.Services.AddScoped<ResearchService>();
-builder.Services.AddScoped<FilingCategoryService>();
+builder.Services.AddScoped<IHtmlCleanerService, HtmlCleanerService>();
+builder.Services.AddScoped<IFilingEventService, FilingEventService>();
+builder.Services.AddScoped<INoteHighlightService, NoteHighlightService>();
+builder.Services.AddScoped<ICompanyTickerService, CompanyTickerService>();
+builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
+builder.Services.AddScoped<IToastService, ToastService>();
+builder.Services.AddScoped<IShareService, ShareService>();
+builder.Services.AddScoped<INoteService, NoteService>();
+builder.Services.AddScoped<IResearchService, ResearchService>();
+builder.Services.AddScoped<IFilingCategoryService, FilingCategoryService>();
 builder.Services.AddHttpClient<TurnstileService>();
 builder.Services.AddScoped<TurnstileService>();
 builder.Services.AddHttpContextAccessor();
 
 builder.Services.AddControllers();
 
-StripeConfiguration.ApiKey = EnvironmentHelper.StripeApiKey;
+Stripe.StripeConfiguration.ApiKey = EnvironmentHelper.StripeApiKey;
 
 var app = builder.Build();
 
-// Run this once to create the admin role and assign it to your user
 using (var scope = app.Services.CreateScope())
 {
-    var userService = scope.ServiceProvider.GetRequiredService<UserService>();
-    await userService.CreateAdminRole();
-    await userService.MakeUserAdmin("aldo.leka@live.com");
+    var userService = scope.ServiceProvider.GetRequiredService<IUserService>();
+    await userService.MakeUserAdminAsync("aldo.leka@live.com");
 }
 
 if (app.Environment.IsDevelopment())

@@ -14,10 +14,10 @@
 
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavigationManager
-@inject HtmlCleanerService HtmlCleaner
-@inject FilingEventService FilingEventService
-@inject NoteHighlightService NoteHighlightService
-@inject CompanyTickerService CompanyTickerService
+@inject IHtmlCleanerService HtmlCleaner
+@inject IFilingEventService FilingEventService
+@inject INoteHighlightService NoteHighlightService
+@inject ICompanyTickerService CompanyTickerService
 
 <PageTitle>@(isLoading ? "Loading..." : $"{filing} - {ticker?.Symbol} Filing")</PageTitle>
 

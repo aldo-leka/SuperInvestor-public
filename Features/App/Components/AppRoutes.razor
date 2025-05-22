@@ -1,7 +1,8 @@
 ﻿@using SuperInvestor.Features.Identity.Components.Account.Shared
+
 <Router AppAssembly="typeof(Program).Assembly">
     <Found Context="routeData">
-        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(SuperInvestor.Features.UI.Components.MainLayout)">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)">
             <NotAuthorized>
                 <RedirectToLogin />
             </NotAuthorized>

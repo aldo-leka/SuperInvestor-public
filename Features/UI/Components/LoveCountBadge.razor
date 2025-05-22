@@ -1,5 +1,4 @@
-﻿@using SuperInvestor.Features.Identity.Services
-@inject UserService UserService
+﻿@inject IUserService UserService
 
 @if (userCount > 0)
 {
@@ -17,6 +16,6 @@
 
     protected override async Task OnInitializedAsync()
     {
-        userCount = await UserService.GetUserCount();
+        userCount = await UserService.GetUserCountAsync();
     }
 }

@@ -1,10 +1,12 @@
 ﻿@page "/upgrade"
+
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Identity
 @using Stripe.Checkout
-@using Microsoft.AspNetCore.Hosting
 @using SuperInvestor.Features.Common.Services
+
 @inject NavigationManager NavigationManager
-@inject IJSRuntime JSRuntime
-@inject IWebHostEnvironment Environment
+@inject AuthenticationStateProvider AuthenticationStateProvider
 
 <PageTitle>Upgrade to SuperInvestor Pro</PageTitle>
 
@@ -32,10 +34,9 @@
                     <li><i class="fas fa-check text-success"></i> Share notes with others</li>
                 </ul>
                 <h3 class="text-center mt-4">
-                    <span class="text-muted"><s>$20/month</s></span>
-                    <span class="text-success">$10/month</span>
+                    <span class="text-success">€3.30/month</span>
                 </h3>
-                <p class="text-center text-danger">Limited Time Offer: 50% Off!</p>
+                <p class="text-center text-muted">The price of a coffee in the Netherlands ☕</p>
                 <button class="btn btn-primary w-100 mt-3" @onclick="Checkout">Upgrade Now</button>
             </SuperCard>
         </div>
@@ -76,24 +77,33 @@
 @code {
     private async Task Checkout()
     {
-        var domain = NavigationManager.BaseUri;
-        var options = new SessionCreateOptions
+        var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        if (auth.User.Identity.IsAuthenticated)
         {
-            LineItems = new List<SessionLineItemOptions>
+            var userId = auth.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!string.IsNullOrEmpty(userId))
             {
-                new()
+                var domain = NavigationManager.BaseUri;
+                var options = new SessionCreateOptions
                 {
-                    Price = EnvironmentHelper.StripePriceId,
-                    Quantity = 1,
+                    ClientReferenceId = userId,
+                LineItems = new List<SessionLineItemOptions>
+                {
+                    new()
+                    {
+                        Price = EnvironmentHelper.StripePriceId,
+                        Quantity = 1,
+                    },
                 },
-            },
-            Mode = "subscription",
-            SuccessUrl = domain + "OrderComplete",
-            CancelUrl = domain + "OrderAbandoned"
-        };
+                Mode = "subscription",
+                SuccessUrl = domain + "OrderComplete",
+                    CancelUrl = domain + "OrderAbandoned"
+                };
 
-        var service = new SessionService();
-        var session = await service.CreateAsync(options);
-        NavigationManager.NavigateTo(session.Url);
+                var service = new SessionService();
+                var session = await service.CreateAsync(options);
+                NavigationManager.NavigateTo(session.Url);
+            }
+        }
     }
 }

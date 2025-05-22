@@ -1,23 +1,14 @@
-﻿@using SuperInvestor.Features.Identity.Data
-@using SuperInvestor.Features.Identity.Services
-@using SuperInvestor.Features.Companies.Services
-@using SuperInvestor.Features.Notes.Models
-@using SuperInvestor.Features.Notes.Services
-@using SuperInvestor.Features.Research.Services
-@using SuperInvestor.Features.Subscription.Services
-@using SuperInvestor.Features.UI.Components
-@using SuperInvestor.Features.UI.Services
+﻿@using System.Security.Claims
 
 @inject IJSRuntime JSRuntime
-@inject FilingEventService FilingEventService
+@inject IFilingEventService FilingEventService
 @inject AuthenticationStateProvider AuthenticationStateProvider
-@inject UserService UserService
-@inject NoteHighlightService NoteHighlightService
-@inject ShareService ShareService
-@inject ToastService ToastService
-@inject NoteService NoteService
-@inject ResearchService ResearchService
-@inject SubscriptionService SubscriptionService
+@inject INoteHighlightService NoteHighlightService
+@inject IShareService ShareService
+@inject IToastService ToastService
+@inject INoteService NoteService
+@inject IResearchService ResearchService
+@inject IUserService UserService
 @inject NavigationManager NavigationManager
 
 @implements IAsyncDisposable
@@ -29,7 +20,7 @@
     If from research (ReadOnly true) -> Show read-only notes
 *@
 
-@if (!ReadOnly && user is null)
+@if (!ReadOnly && string.IsNullOrEmpty(userId))
 {
     <div id="notes-area" class="alert alert-info">
         <h4 class="alert-heading">Unlock the Power of Financial Analysis</h4>
@@ -134,7 +125,7 @@ else
     private int currentEndIndex;
     private string currentSelectedText;
     private bool updateNotesLayout = false;
-    private ApplicationUser user;
+    private string userId;
     private string userName;
     private DotNetObjectReference<Notes> objRef;
     private bool hasActiveSubscription = false;
@@ -157,17 +148,20 @@ else
         NoteHighlightService.FilingContentReady += HandleFilingContentReady;
         objRef = DotNetObjectReference.Create(this);
 
+        var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
         if (!ReadOnly)
         {
-            var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
             if (auth.User.Identity.IsAuthenticated)
             {
-                user = await UserService.GetUser();
-                userName = user.Name ?? user.Email;
-                hasActiveSubscription = await SubscriptionService.HasActiveSubscription(user);
-                if (hasActiveSubscription)
+                userId = auth.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (!string.IsNullOrEmpty(userId))
                 {
-                    notes = (await NoteService.GetNotes(user.Id, Ticker, AccessionNumber))
+                    var user = await UserService.GetByIdAsync(userId);
+                    userName = user?.Name ?? user?.Email;
+                    hasActiveSubscription = await UserService.UserHasActiveSubscriptionAsync(userId);
+                    if (hasActiveSubscription)
+                    {
+                        notes = (await NoteService.GetNotes(userId, Ticker, AccessionNumber))
                         .Select(n => new NoteViewModel
                             {
                                 Id = n.Id.ToString(),
@@ -178,6 +172,7 @@ else
                                 EndIndex = n.EndIndex
                             })
                         .ToList();
+                    }
                 }
             }
         }
@@ -199,8 +194,8 @@ else
             {
                 notes = notes.Where(n => n.ShortId == NoteShortId).ToList();
             }
-
-            var user = await UserService.GetUser(research.UserId);
+            
+            var user = await UserService.GetByIdAsync(research.UserId);
             userName = user?.Name;
         }
 
@@ -293,7 +288,7 @@ else
 
     private async Task AddNote(string noteText)
     {
-        var newNote = await NoteService.AddNote(user.Id, Ticker, AccessionNumber, noteText, currentStartIndex, currentEndIndex);
+        var newNote = await NoteService.AddNote(userId, Ticker, AccessionNumber, noteText, currentStartIndex, currentEndIndex);
 
         var newNoteViewModel = new NoteViewModel
             {

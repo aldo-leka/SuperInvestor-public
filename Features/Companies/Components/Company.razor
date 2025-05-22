@@ -1,26 +1,16 @@
 ﻿@page "/companies/{ticker}"
 
 @using System.Globalization
+@using System.Security.Claims
 @using Microsoft.AspNetCore.Identity
 @using Microsoft.Net.Http.Headers
-@using Microsoft.EntityFrameworkCore
-@using System.Text
-@using SuperInvestor.Features.Companies.Models
-@using SuperInvestor.Features.Companies.Services
-@using SuperInvestor.Features.Identity.Data
-@using SuperInvestor.Features.Identity.Services
-@using SuperInvestor.Features.Notes.Services
-@using SuperInvestor.Features.UI.Components
-@using SuperInvestor.Features.UI.Services
 
 @inject NavigationManager NavigationManager
 @inject YahooClient Yahoo
-@inject CompanyTickerService CompanyTickerService
+@inject ICompanyTickerService CompanyTickerService
 @inject AuthenticationStateProvider AuthenticationStateProvider
-@inject UserService UserService
-@inject FilingCategoryService FilingCategoryService
-@inject NoteService NoteService
-@inject ToastService ToastService
+@inject IFilingCategoryService FilingCategoryService
+@inject INoteService NoteService
 @inject IJSRuntime JSRuntime
 
 @if (isLoading)
@@ -120,13 +110,13 @@ else
     private bool isLoading = true;
     private Submission document;
     private YahooQuote quote;
-    private SuperInvestor.Features.Identity.Data.ApplicationUser user;
-    private List<SuperInvestor.Features.Companies.Models.Filing> financials = [];
-    private List<SuperInvestor.Features.Companies.Models.Filing> prospectuses = [];
-    private List<SuperInvestor.Features.Companies.Models.Filing> ownership = [];
-    private List<SuperInvestor.Features.Companies.Models.Filing> news = [];
-    private List<SuperInvestor.Features.Companies.Models.Filing> proxies = [];
-    private List<SuperInvestor.Features.Companies.Models.Filing> other = [];
+    private string userId;
+    private List<Models.Filing> financials = [];
+    private List<Models.Filing> prospectuses = [];
+    private List<Models.Filing> ownership = [];
+    private List<Models.Filing> news = [];
+    private List<Models.Filing> proxies = [];
+    private List<Models.Filing> other = [];
     private Dictionary<string, string> currencySymbols = new Dictionary<string, string>
     {
         { "USD", "$" }, { "EUR", "€" }, { "JPY", "¥" }, { "GBP", "£" },
@@ -162,7 +152,7 @@ else
         var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
         if (auth.User.Identity.IsAuthenticated)
         {
-            user = await UserService.GetUser();
+            userId = auth.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         }
     }
 
@@ -202,9 +192,9 @@ else
             }
 
             var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
-            if (auth.User.Identity.IsAuthenticated)
+            if (auth.User.Identity.IsAuthenticated && !string.IsNullOrEmpty(userId))
             {
-                var userNotes = (await NoteService.GetNotes(user.Id, Ticker))
+                var userNotes = (await NoteService.GetNotes(userId, Ticker))
                     .Select(n => n.AccessionNumber)
                     .Distinct();
 
@@ -241,13 +231,13 @@ else
 
     private async Task ExportNotes()
     {
-        if (user == null)
+        if (string.IsNullOrEmpty(userId))
         {
             NavigationManager.NavigateTo("Account/Login");
             return;
         }
 
-        var notes = await NoteService.GetNotes(user.Id, Ticker);
+        var notes = await NoteService.GetNotes(userId, Ticker);
         if (!notes.Any())
         {
             await ToastComponent.ShowToast("Export", "No notes to export", 3000);

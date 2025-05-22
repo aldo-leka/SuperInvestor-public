@@ -1,21 +1,30 @@
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using SuperInvestor.Features.Identity.Data;
-using SuperInvestor.Features.Identity.Services;
+using System.Security.Claims;
 
 namespace SuperInvestor.Features.Identity.Services
 {
-    internal sealed class IdentityUserAccessor(UserService userService, IdentityRedirectManager redirectManager)
+    internal sealed class IdentityUserAccessor(AuthenticationStateProvider authenticationStateProvider, IUserService userService, IdentityRedirectManager redirectManager)
     {
         public async Task<ApplicationUser> GetRequiredUserAsync(HttpContext context)
         {
-            var user = await userService.GetUser();
-
-            if (user is null)
+            var auth = await authenticationStateProvider.GetAuthenticationStateAsync();
+            if (auth.User.Identity.IsAuthenticated)
             {
-                redirectManager.RedirectToWithStatus("Account/InvalidUser", $"Error: Unable to load user.", context);
+                var userId = auth.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (!string.IsNullOrEmpty(userId))
+                {
+                    var user = await userService.GetByIdAsync(userId);
+                    if (user != null)
+                    {
+                        return user;
+                    }
+                }
             }
 
-            return user;
+            redirectManager.RedirectToWithStatus("Account/InvalidUser", $"Error: Unable to load user.", context);
+            return null;
         }
     }
 }

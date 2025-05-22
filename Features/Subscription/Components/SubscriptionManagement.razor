@@ -1,56 +1,192 @@
 ﻿@page "/Account/Manage/Subscription"
 
-@using SuperInvestor.Features.Identity.Data
-@using SuperInvestor.Features.Identity.Services
-@using SuperInvestor.Features.Subscription.Services
-@using SuperInvestor.Features.Subscription.Data
+@using Microsoft.AspNetCore.Identity
+@using System.Security.Claims
 
-@inject UserService UserService
-@inject SubscriptionService SubscriptionService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject ISubscriptionService SubscriptionService
 @inject NavigationManager NavigationManager
-@inject IConfiguration Configuration
 
 <PageTitle>Subscription & Billing</PageTitle>
 
 <h3>Subscription & Billing</h3>
 
-@if (subscription != null)
+@if (_userSubscription != null)
 {
     <div class="card mb-4">
         <div class="card-body">
-            <h5 class="card-title">Current Plan: @subscription.PlanName</h5>
-            <p class="card-text">Status: @subscription.Status</p>
-            <p class="card-text">Amount: @subscription.PlanAmount @subscription.PlanCurrency</p>
-            <p class="card-text">Billing Cycle: @subscription.PlanInterval</p>
-            <p class="card-text">Current Period Ends: @subscription.CurrentPeriodEnd?.ToLocalTime().ToString("MMMM dd, yyyy")</p>
-            @if (subscription.StripeCustomerId != "admin_granted")
+            <h5 class="card-title">
+                Current Plan
+                <span class="badge @GetStatusBadgeClass(_userSubscription.Status.ToString())">
+                    @FormatSubscriptionStatus(_userSubscription.Status.ToString())
+                </span>
+            </h5>
+            
+        @*
+            @if (!string.IsNullOrEmpty(_userSubscription.PriceId))
             {
-                <a href="@ManageSubscriptionUrl" class="btn btn-primary">Manage Subscription</a>
+                <p class="card-text"><strong>Price ID:</strong> @_userSubscription.PriceId</p>
             }
-            else
+            *@
+            
+            <p class="card-text"><strong>Quantity:</strong> @_userSubscription.Quantity</p>
+            
+            <div class="row">
+                <div class="col-md-6">
+                    <p class="card-text">
+                        <strong>Current Period:</strong><br>
+                        @_userSubscription.CurrentPeriodStart.ToLocalTime().ToString("MMMM dd, yyyy") - 
+                        @_userSubscription.CurrentPeriodEnd.ToLocalTime().ToString("MMMM dd, yyyy")
+                    </p>
+                </div>
+                <div class="col-md-6">
+                    <p class="card-text">
+                        <strong>Created:</strong> @_userSubscription.CreatedAt.ToLocalTime().ToString("MMMM dd, yyyy")<br>
+                        <strong>Last Updated:</strong> @_userSubscription.UpdatedAt.ToLocalTime().ToString("MMMM dd, yyyy")
+                    </p>
+                </div>
+            </div>
+
+            @if (_userSubscription.PastDue)
             {
-                <p class="text-info">This is an admin-granted subscription. No management options available.</p>
+                <div class="alert alert-warning mt-3">
+                    <h6>⚠️ Payment Issue</h6>
+                    <p>Your subscription is past due. Please update your payment method to continue service.</p>
+                    @if (_userSubscription.PaymentFailedCount.HasValue && _userSubscription.PaymentFailedCount > 0)
+                    {
+                        <small>Failed payment attempts: @_userSubscription.PaymentFailedCount</small>
+                    }
+                </div>
             }
+
+            @if (_userSubscription.CanceledAt.HasValue)
+            {
+                <div class="alert alert-info mt-3">
+                    <h6>ℹ️ Subscription Canceled</h6>
+                    <p>Your subscription was canceled on @_userSubscription.CanceledAt.Value.ToLocalTime().ToString("MMMM dd, yyyy").</p>
+                    <p>You'll continue to have access until @_userSubscription.CurrentPeriodEnd.ToLocalTime().ToString("MMMM dd, yyyy").</p>
+                </div>
+            }
+
+            <div class="mt-4">
+                @if (IsAdminGranted())
+                {
+                    <div class="alert alert-success">
+                        <h6>🎉 Admin Granted Access</h6>
+                        <p>This is a complimentary subscription granted by an administrator. No payment management is required.</p>
+                    </div>
+                }
+                else if (HasValidStripeCustomer())
+                {
+                    <a href="@ManageSubscriptionUrl" class="btn btn-primary">
+                        <i class="fas fa-cog"></i> Manage Subscription & Billing
+                    </a>
+                    
+                    @if (_userSubscription.Status == SubscriptionStatus.Canceled)
+                    {
+                        <a href="/upgrade" class="btn btn-success ms-2">
+                            <i class="fas fa-refresh"></i> Reactivate Subscription
+                        </a>
+                    }
+                }
+                else
+                {
+                    <a href="/upgrade" class="btn btn-success">
+                        <i class="fas fa-credit-card"></i> Set Up Payment Method
+                    </a>
+                }
+            </div>
         </div>
     </div>
+
+    @*@if (!string.IsNullOrEmpty(_userSubscription.LastInvoiceId))
+    {
+        <div class="card">
+            <div class="card-body">
+                <h6 class="card-title">Recent Activity</h6>
+                <p class="card-text">
+                    <strong>Last Invoice:</strong> @_userSubscription.LastInvoiceId
+                </p>
+                @if (_userSubscription.LastPaymentFailure.HasValue)
+                {
+                    <p class="text-warning">
+                        <strong>Last Payment Issue:</strong> @_userSubscription.LastPaymentFailure.Value.ToLocalTime().ToString("MMMM dd, yyyy")
+                    </p>
+                }
+            </div>
+        </div>
+    }*@
 }
 else
 {
     <div class="alert alert-info">
-        You don't have an active subscription. <a href="/upgrade">Upgrade now</a> to access premium features.
+        <h5>No Active Subscription</h5>
+        <p>You don't have an active subscription. Upgrade now to access premium features and unlock the full potential of our platform.</p>
+        <a href="/upgrade" class="btn btn-primary">
+            <i class="fas fa-arrow-up"></i> Upgrade Now
+        </a>
     </div>
 }
 
 @code {
-    private ApplicationUser user;
-    private SuperInvestor.Features.Subscription.Data.Subscription subscription;
-    private string ManageSubscriptionUrl => subscription != null && !string.IsNullOrEmpty(subscription.StripeCustomerId) && subscription.StripeCustomerId != "admin_granted"
-        ? SubscriptionService.CreateBillingPortalSession(subscription.StripeCustomerId, NavigationManager.Uri)
+    private UserSubscription _userSubscription;
+    
+    private string ManageSubscriptionUrl => HasValidStripeCustomer()
+        ? SubscriptionService.CreateBillingPortalSession(_userSubscription.StripeCustomerId, NavigationManager.Uri)
         : "/upgrade";
 
     protected override async Task OnInitializedAsync()
     {
-        user = await UserService.GetUser();
-        subscription = await SubscriptionService.GetSubscription(user.Id);
+        var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        if (auth.User.Identity.IsAuthenticated)
+        {
+            var userId = auth.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!string.IsNullOrEmpty(userId))
+            {
+                _userSubscription = await SubscriptionService.GetByUserIdAsync(userId);
+            }
+        }
+    }
+
+    private bool IsAdminGranted()
+    {
+        return _userSubscription?.StripeCustomerId == "admin_granted" ||
+               _userSubscription?.StripeSubscriptionId?.StartsWith("admin_granted") == true;
+    }
+
+    private bool HasValidStripeCustomer()
+    {
+        return !string.IsNullOrEmpty(_userSubscription?.StripeCustomerId) && 
+               !IsAdminGranted();
+    }
+
+    private string GetStatusBadgeClass(string status)
+    {
+        return status?.ToLower() switch
+        {
+            "active" => "bg-success",
+            "trialing" => "bg-primary",
+            "past_due" => "bg-warning text-dark",
+            "canceled" => "bg-secondary",
+            "incomplete" => "bg-warning text-dark",
+            "incomplete_expired" => "bg-danger",
+            "unpaid" => "bg-danger",
+            _ => "bg-secondary"
+        };
+    }
+
+    private string FormatSubscriptionStatus(string status)
+    {
+        return status?.ToLower() switch
+        {
+            "active" => "Active",
+            "trialing" => "Trial Period",
+            "past_due" => "Past Due",
+            "canceled" => "Canceled",
+            "incomplete" => "Incomplete Setup",
+            "incomplete_expired" => "Setup Expired",
+            "unpaid" => "Payment Failed",
+            _ => status
+        };
     }
 }

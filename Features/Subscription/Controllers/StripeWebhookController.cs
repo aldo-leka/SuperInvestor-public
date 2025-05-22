@@ -1,241 +1,238 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using Stripe;
 using Stripe.Checkout;
 using SuperInvestor.Features.Common.Services;
 using SuperInvestor.Features.Identity.Services;
+using SuperInvestor.Features.Subscription.Services;
+using SubscriptionService = Stripe.SubscriptionService;
 
 namespace SuperInvestor.Features.Subscription.Controllers;
 
-[Route("webhook")]
+/// <summary>
+/// https://docs.stripe.com/billing/subscriptions/build-subscriptions
+/// </summary>
 [ApiController]
-public class StripeWebhookController(ILogger<StripeWebhookController> logger, UserService userService, Services.SubscriptionService subscriptionService) : ControllerBase
+[Route("api/[controller]")]
+public class StripeWebhookController(ILogger<StripeWebhookController> logger, ISubscriptionService subscriptionService, IUserService userService)
+    : ControllerBase
 {
     [HttpPost]
-    public async Task<IActionResult> Index()
+    public async Task<IActionResult> HandleWebhook()
     {
-        var json = await new StreamReader(HttpContext.Request.Body).ReadToEndAsync();
-        var secret = EnvironmentHelper.StripeWebHookSecret;
-
         try
         {
-            var stripeEvent = EventUtility.ConstructEvent(
-                json,
-                Request.Headers["Stripe-Signature"],
-                secret
-            );
+            // Read the request body
+            var json = await new StreamReader(HttpContext.Request.Body).ReadToEndAsync();
 
-            switch (stripeEvent.Type)
+            // Verify the webhook signature
+            var stripeEvent = ConstructStripeEvent(json);
+            if (stripeEvent == null)
             {
-                case EventTypes.CheckoutSessionCompleted:
-                    await HandleCheckoutSessionCompletedAsync(stripeEvent);
-                    break;
-                case EventTypes.CustomerSubscriptionUpdated:
-                    await HandleCustomerSubscriptionUpdatedAsync(stripeEvent);
-                    break;
-                case EventTypes.CustomerSubscriptionDeleted:
-                    await HandleCustomerSubscriptionDeletedAsync(stripeEvent);
-                    break;
-                case EventTypes.InvoicePaymentSucceeded:
-                    await HandleInvoicePaymentSucceededAsync(stripeEvent);
-                    break;
-                case EventTypes.InvoicePaymentFailed:
-                    await HandleInvoicePaymentFailedAsync(stripeEvent);
-                    break;
-                default:
-                    logger.LogInformation("Unhandled event type: {0}", stripeEvent.Type);
-                    break;
+                logger.LogWarning("Invalid webhook signature");
+                return BadRequest("Invalid signature");
             }
+            
+            await HandleStripeEvent(stripeEvent);
 
             return Ok();
         }
-        catch (StripeException e)
+        catch (StripeException ex)
         {
-            logger.LogError(e, "Error processing Stripe webhook");
-            return BadRequest("Invalid payload");
+            logger.LogError(ex, "Stripe error processing webhook");
+            return BadRequest($"Stripe error: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error processing Stripe webhook");
+            return StatusCode(500, "Internal server error");
         }
     }
 
-    private async Task HandleCheckoutSessionCompletedAsync(Event stripeEvent)
+    private Event? ConstructStripeEvent(string json)
+    {
+        try
+        {
+            var stripeSignature = Request.Headers["Stripe-Signature"];
+            return EventUtility.ConstructEvent(json, stripeSignature, EnvironmentHelper.StripeWebHookSecret);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to construct Stripe event");
+            return null;
+        }
+    }
+
+    private async Task HandleStripeEvent(Event stripeEvent)
+    {
+        switch (stripeEvent.Type)
+        {
+            case EventTypes.CheckoutSessionCompleted:
+                await HandleCheckoutSessionCompleted(stripeEvent);
+                break;
+
+            case EventTypes.InvoicePaymentSucceeded:
+                await HandleInvoicePaid(stripeEvent);
+                break;
+
+            case EventTypes.InvoicePaymentFailed:
+                await HandleInvoicePaymentFailed(stripeEvent);
+                break;
+
+            case EventTypes.CustomerSubscriptionUpdated:
+                await HandleSubscriptionUpdated(stripeEvent);
+                break;
+
+            case EventTypes.CustomerSubscriptionDeleted:
+                await HandleSubscriptionDeleted(stripeEvent);
+                break;
+        }
+    }
+
+    private async Task HandleCheckoutSessionCompleted(Event stripeEvent)
     {
         var session = stripeEvent.Data.Object as Session;
-        var options = new SessionGetOptions();
-        options.AddExpand("line_items");
-        options.AddExpand("customer");
-        options.AddExpand("subscription");
+        LogStripeObject(EventTypes.CheckoutSessionCompleted, session);
 
-        var service = new SessionService();
-        var sessionWithLineItems = await service.GetAsync(session.Id, options);
-
-        var userEmail = sessionWithLineItems.CustomerDetails.Email;
-        var user = await userService.GetUserByEmailAsync(userEmail);
-
-        if (user == null)
+        try
         {
-            logger.LogError("User not found for email: {Email}", userEmail);
-            return;
-        }
-
-        var stripeSubscription = sessionWithLineItems.Subscription;
-        var subscriptionItem = stripeSubscription.Items.Data[0];
-        var price = subscriptionItem.Price;
-
-        var dbSubscription = new SuperInvestor.Features.Subscription.Data.Subscription
-        {
-            UserId = user.Id,
-            StripeCustomerId = sessionWithLineItems.CustomerId,
-            StripeSubscriptionId = stripeSubscription.Id,
-            StartDate = DateTime.UtcNow,
-            Status = stripeSubscription.Status,
-            PlanId = price.Id,
-            CurrentPeriodStart = subscriptionItem.CurrentPeriodStart,
-            CurrentPeriodEnd = subscriptionItem.CurrentPeriodEnd,
-            PlanName = price.Nickname,
-            PlanAmount = price.UnitAmount ?? 0,
-            PlanCurrency = price.Currency,
-            PlanInterval = price.Recurring.Interval
-        };
-
-        await subscriptionService.CreateSubscription(dbSubscription);
-
-        logger.LogInformation("Subscription created for user: {UserId}", user.Id);
-    }
-
-    private async Task HandleCustomerSubscriptionUpdatedAsync(Event stripeEvent)
-    {
-        var stripeSubscription = stripeEvent.Data.Object as Stripe.Subscription;
-        var dbSubscription = await subscriptionService.GetSubscriptionByStripeSubscriptionId(stripeSubscription.Id);
-
-        if (dbSubscription == null)
-        {
-            logger.LogError("Subscription not found: {SubscriptionId}", stripeSubscription.Id);
-            return;
-        }
-
-        var subscriptionItem = stripeSubscription.Items.Data[0];
-        var price = subscriptionItem.Price;
-        dbSubscription.Status = stripeSubscription.Status;
-        dbSubscription.PlanId = price.Id;
-        dbSubscription.EndDate = stripeSubscription.CancelAtPeriodEnd ? subscriptionItem.CurrentPeriodEnd : null;
-        dbSubscription.CurrentPeriodStart = subscriptionItem.CurrentPeriodStart;
-        dbSubscription.CurrentPeriodEnd = subscriptionItem.CurrentPeriodEnd;
-        dbSubscription.PlanName = price.Nickname;
-        dbSubscription.PlanAmount = price.UnitAmount ?? 0;
-        dbSubscription.PlanCurrency = price.Currency;
-        dbSubscription.PlanInterval = price.Recurring.Interval;
-
-        await subscriptionService.UpdateSubscription(dbSubscription);
-
-        logger.LogInformation("Subscription updated: {SubscriptionId}", stripeSubscription.Id);
-    }
-
-    private async Task HandleCustomerSubscriptionDeletedAsync(Event stripeEvent)
-    {
-        var stripeSubscription = stripeEvent.Data.Object as Stripe.Subscription;
-        var dbSubscription = await subscriptionService.GetSubscriptionByStripeSubscriptionId(stripeSubscription.Id);
-
-        if (dbSubscription == null)
-        {
-            logger.LogError("Subscription not found: {SubscriptionId}", stripeSubscription.Id);
-            return;
-        }
-
-        var subscriptionItem = stripeSubscription.Items.Data[0];
-        await subscriptionService.CancelSubscription(
-            dbSubscription.Id,
-            "canceled",
-            subscriptionItem.CurrentPeriodEnd);
-
-        logger.LogInformation("Subscription canceled: {SubscriptionId}", stripeSubscription.Id);
-    }
-
-    private async Task HandleInvoicePaymentSucceededAsync(Event stripeEvent)
-    {
-        var invoice = stripeEvent.Data.Object as Invoice;
-        
-        // Expand the invoice to get the lines which contain subscription information
-        var invoiceService = new InvoiceService();
-        var invoiceOptions = new InvoiceGetOptions
-        {
-            Expand = new List<string> { "lines" }
-        };
-        var invoiceWithLines = await invoiceService.GetAsync(invoice.Id, invoiceOptions);
-        
-        // Find the subscription ID from the lines
-        string subscriptionId = null;
-        foreach (var line in invoiceWithLines.Lines.Data)
-        {
-            if (line.Subscription != null)
+            // Get user ID from client_reference_id
+            if (string.IsNullOrEmpty(session.ClientReferenceId))
             {
-                subscriptionId = line.Subscription.Id;
-                break;
+                logger.LogWarning("No client_reference_id found in session {SessionId},", session.Id);
+                return;
+            }
+
+            var userId = session.ClientReferenceId;
+            var customerId = session.CustomerId;
+
+            // Update user with Stripe customer ID
+            await userService.UpdateStripeCustomerIdAsync(userId, customerId);
+
+            // If this was a subscription checkout, handle the subscription
+            if (!string.IsNullOrEmpty(session.SubscriptionId))
+            {
+                var stripeSubscriptionService = new SubscriptionService();
+                var subscription = await stripeSubscriptionService.GetAsync(session.SubscriptionId);
+
+                await subscriptionService.CreateOrUpdateSubscriptionAsync(userId, subscription);
             }
         }
-        
-        if (string.IsNullOrEmpty(subscriptionId))
+        catch (Exception ex)
         {
-            logger.LogError("No subscription found in invoice: {InvoiceId}", invoice.Id);
-            return;
+            logger.LogError(ex, "Error handling checkout.session.completed for session {SessionId}", session.Id);
+            throw;
         }
-        
-        var subscription = await subscriptionService.GetSubscriptionByStripeSubscriptionId(subscriptionId);
-
-        if (subscription == null)
-        {
-            logger.LogError("Subscription not found in database: {SubscriptionId}", subscriptionId);
-            return;
-        }
-
-        // Update subscription status if needed
-        if (subscription.Status != "active")
-        {
-            await subscriptionService.UpdateSubscriptionStatus(subscription.Id, "active");
-        }
-
-        logger.LogInformation("Payment succeeded for subscription: {SubscriptionId}", subscriptionId);
     }
 
-    private async Task HandleInvoicePaymentFailedAsync(Event stripeEvent)
+    private async Task HandleInvoicePaid(Event stripeEvent)
     {
         var invoice = stripeEvent.Data.Object as Invoice;
-        
-        // Expand the invoice to get the lines which contain subscription information
-        var invoiceService = new InvoiceService();
-        var invoiceOptions = new InvoiceGetOptions
+        LogStripeObject(EventTypes.InvoicePaid, invoice);
+
+        try
         {
-            Expand = new List<string> { "lines" }
-        };
-        var invoiceWithLines = await invoiceService.GetAsync(invoice.Id, invoiceOptions);
-        
-        // Find the subscription ID from the lines
-        string subscriptionId = null;
-        foreach (var line in invoiceWithLines.Lines.Data)
-        {
-            if (line.Subscription != null)
+            var customerId = invoice.CustomerId;
+            var user = await userService.GetByStripeCustomerIdAsync(customerId);
+
+            if (user == null)
             {
-                subscriptionId = line.Subscription.Id;
-                break;
+                logger.LogWarning("No user found for Stripe customer {CustomerId}", customerId);
+                return;
             }
+
+            // Update invoice payment status
+            await subscriptionService.HandleInvoicePaidAsync(user.Id, invoice);
         }
-        
-        if (string.IsNullOrEmpty(subscriptionId))
+        catch (Exception ex)
         {
-            logger.LogError("No subscription found in invoice: {InvoiceId}", invoice.Id);
-            return;
+            logger.LogError(ex, "Error handling invoice.payment_succeeded for invoice {InvoiceId}", invoice?.Id);
+            throw;
         }
-        
-        var subscription = await subscriptionService.GetSubscriptionByStripeSubscriptionId(subscriptionId);
+    }
 
-        if (subscription == null)
+    private async Task HandleInvoicePaymentFailed(Event stripeEvent)
+    {
+        var invoice = stripeEvent.Data.Object as Invoice;
+        LogStripeObject(EventTypes.InvoicePaymentFailed, invoice);
+
+        try
         {
-            logger.LogError("Subscription not found in database: {SubscriptionId}", subscriptionId);
-            return;
+            var customerId = invoice.CustomerId;
+            var user = await userService.GetByStripeCustomerIdAsync(customerId);
+
+            if (user == null)
+            {
+                logger.LogWarning("No user found for Stripe customer {CustomerId}", customerId);
+                return;
+            }
+
+            await subscriptionService.HandleInvoicePaymentFailedAsync(user.Id, invoice);
         }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error handling invoice.payment_failed for invoice {InvoiceId}", invoice.Id);
+            throw;
+        }
+    }
 
-        // Update subscription status
-        await subscriptionService.UpdateSubscriptionStatus(subscription.Id, "past_due");
+    private async Task HandleSubscriptionUpdated(Event stripeEvent)
+    {
+        var subscription = stripeEvent.Data.Object as Stripe.Subscription;
+        LogStripeObject(EventTypes.CustomerSubscriptionUpdated, subscription);
 
-        logger.LogWarning("Payment failed for subscription: {SubscriptionId}", subscriptionId);
+        try
+        {
+            var customerId = subscription.CustomerId;
+            var user = await userService.GetByStripeCustomerIdAsync(customerId);
 
-        // TODO: Implement logic to notify the user about the failed payment
+            if (user == null)
+            {
+                logger.LogWarning("No user found for Stripe customer {CustomerId}", customerId);
+                return;
+            }
+
+            await subscriptionService.UpdateSubscriptionAsync(user.Id, subscription);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error handling customer.subscription.updated for subscription {SubscriptionId}", subscription.Id);
+            throw;
+        }
+    }
+
+    private async Task HandleSubscriptionDeleted(Event stripeEvent)
+    {
+        var subscription = stripeEvent.Data.Object as Stripe.Subscription;
+        LogStripeObject(EventTypes.CustomerSubscriptionDeleted, subscription);
+
+        try
+        {
+            var customerId = subscription.CustomerId;
+            var user = await userService.GetByStripeCustomerIdAsync(customerId);
+
+            if (user == null)
+            {
+                logger.LogWarning("No user found for Stripe customer {CustomerId}", customerId);
+                return;
+            }
+
+            await subscriptionService.CancelSubscriptionAsync(user.Id, subscription);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error handling customer.subscription.deleted for subscription {SubscriptionId}", subscription.Id);
+            throw;
+        }
+    }
+    
+    private void LogStripeObject(string eventType, object stripeObject)
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(stripeObject, new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true,
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+        });
+        
+        logger.LogDebug("Stripe {EventType} structure:\n{Json}", eventType, json);
     }
 }

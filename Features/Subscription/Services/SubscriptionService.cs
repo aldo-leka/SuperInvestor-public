@@ -1,28 +1,12 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Stripe;
 using SuperInvestor.Features.Common.Data;
-using SuperInvestor.Features.Identity.Data;
+using SuperInvestor.Features.Subscription.Data;
 
 namespace SuperInvestor.Features.Subscription.Services;
 
-public class SubscriptionService(IDbContextFactory<ApplicationDbContext> factory)
+public class SubscriptionService(IDbContextFactory<ApplicationDbContext> factory, ILogger<SubscriptionService> logger) : ISubscriptionService
 {
-    public async Task<bool> HasActiveSubscription(ApplicationUser user)
-    {
-        await using var db = await factory.CreateDbContextAsync();
-        
-        var subscription = await db.Subscriptions
-            .FirstOrDefaultAsync(s => s.UserId == user.Id);
-
-        if (subscription == null)
-        {
-            return false;
-        }
-
-        // Check if the subscription is active and either has no end date or the end date is in the future
-        return subscription.Status == "active" && 
-               (subscription.EndDate == null || subscription.EndDate > DateTime.UtcNow);
-    }
-
     public string CreateBillingPortalSession(string customerId, string returnUrl)
     {
         var options = new Stripe.BillingPortal.SessionCreateOptions
@@ -37,61 +21,280 @@ public class SubscriptionService(IDbContextFactory<ApplicationDbContext> factory
         return session.Url;
     }
 
-    private async Task<SuperInvestor.Features.Subscription.Data.Subscription> GetSubscription(int subscriptionId)
+    public async Task CreateOrUpdateSubscriptionAsync(string userId, Stripe.Subscription subscription)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        return await db.Subscriptions.FindAsync(subscriptionId);
+        try
+        {
+            await using var db = await factory.CreateDbContextAsync();
+            var existingSubscription = await db.UserSubscriptions
+                .FirstOrDefaultAsync(s => s.UserId == userId);
+
+            if (existingSubscription != null)
+            {
+                UpdateSubscriptionFromStripe(existingSubscription, subscription);
+                db.UserSubscriptions.Update(existingSubscription);
+            }
+            else
+            {
+                var newSubscription = CreateSubscriptionFromStripe(userId, subscription);
+                await db.UserSubscriptions.AddAsync(newSubscription);
+            }
+
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error creating/updating subscription for user {UserId}", userId);
+            throw;
+        }
     }
 
-    public async Task<SuperInvestor.Features.Subscription.Data.Subscription> GetSubscription(string userId)
+    public async Task HandleInvoicePaidAsync(string userId, Invoice invoice)
+    {
+        try
+        {
+            var subscription = await GetByUserIdAsync(userId);
+            if (subscription == null)
+            {
+                logger.LogWarning("No subscription found for user {UserId} when handling paid invoice", userId);
+                return;
+            }
+
+            // Update subscription status to active
+            subscription.Status = SubscriptionStatus.Active;
+            
+            // Try to get period end from invoice line items if available
+            var firstLineItem = invoice.Lines?.Data?.FirstOrDefault();
+            if (firstLineItem?.Period != null)
+            {
+                subscription.CurrentPeriodEnd = firstLineItem.Period.End;
+            }
+            else if (invoice.PeriodEnd != DateTime.MinValue)
+            {
+                subscription.CurrentPeriodEnd = invoice.PeriodEnd;
+            }
+            
+            subscription.LastInvoiceId = invoice.Id;
+            subscription.UpdatedAt = DateTime.UtcNow;
+
+            // Clear any past due status
+            subscription.PastDue = false;
+            subscription.PaymentFailedCount = 0;
+
+            await using var db = await factory.CreateDbContextAsync();
+            db.UserSubscriptions.Update(subscription);
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error handling paid invoice for user {UserId}", userId);
+            throw;
+        }
+    }
+
+    public async Task HandleInvoicePaymentFailedAsync(string userId, Invoice invoice)
+    {
+        try
+        {
+            var subscription = await GetByUserIdAsync(userId);
+            if (subscription == null)
+            {
+                logger.LogWarning("No subscription found for user {UserId} when handling failed payment", userId);
+                return;
+            }
+
+            // Update subscription with failure information
+            subscription.PastDue = true;
+            subscription.PaymentFailedCount = (subscription.PaymentFailedCount ?? 0) + 1;
+            subscription.LastPaymentFailure = DateTime.UtcNow;
+            subscription.UpdatedAt = DateTime.UtcNow;
+
+            // If this is the final attempt (you can customize this logic)
+            if (subscription.PaymentFailedCount >= 3)
+            {
+                subscription.Status = SubscriptionStatus.Unpaid;
+                await DowngradeUserFeaturesAsync(userId);
+            }
+            else
+            {
+                subscription.Status = SubscriptionStatus.PastDue;
+            }
+
+            await using var db = await factory.CreateDbContextAsync();
+            db.UserSubscriptions.Update(subscription);
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error handling payment failure for user {UserId}", userId);
+            throw;
+        }
+    }
+
+    public async Task UpdateSubscriptionStatusAsync(string userId, Stripe.Subscription subscription)
+    {
+        try
+        {
+            var userSubscription = await GetByUserIdAsync(userId);
+            if (userSubscription == null)
+            {
+                logger.LogWarning("No subscription found for user {UserId} when updating status", userId);
+                return;
+            }
+
+            UpdateSubscriptionFromStripe(userSubscription, subscription);
+            
+            await using var db = await factory.CreateDbContextAsync();
+            db.UserSubscriptions.Update(userSubscription);
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error updating subscription status for user {UserId}", userId);
+            throw;
+        }
+    }
+
+    public async Task UpdateSubscriptionAsync(string userId, Stripe.Subscription subscription)
+    {
+        try
+        {
+            var userSubscription = await GetByUserIdAsync(userId);
+            if (userSubscription == null)
+            {
+                // Create new subscription if it doesn't exist
+                await CreateOrUpdateSubscriptionAsync(userId, subscription);
+                return;
+            }
+
+            UpdateSubscriptionFromStripe(userSubscription, subscription);
+            
+            await using var db = await factory.CreateDbContextAsync();
+            db.UserSubscriptions.Update(userSubscription);
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error updating subscription for user {UserId}", userId);
+            throw;
+        }
+    }
+
+    public async Task CancelSubscriptionAsync(string userId, Stripe.Subscription subscription)
+    {
+        try
+        {
+            var userSubscription = await GetByUserIdAsync(userId);
+            if (userSubscription == null)
+            {
+                logger.LogWarning("No subscription found for user {UserId} when canceling", userId);
+                return;
+            }
+
+            userSubscription.Status = SubscriptionStatus.Canceled;
+            userSubscription.CanceledAt = DateTime.UtcNow;
+            userSubscription.UpdatedAt = DateTime.UtcNow;
+
+            // Keep access until the current period ends
+            var subscriptionItem = subscription.Items?.Data?.FirstOrDefault();
+            if (subscriptionItem != null)
+            {
+                userSubscription.CurrentPeriodEnd = subscriptionItem.CurrentPeriodEnd;
+            }
+
+            await using var db = await factory.CreateDbContextAsync();
+            db.UserSubscriptions.Update(userSubscription);
+            await db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error canceling subscription for user {UserId}", userId);
+            throw;
+        }
+    }
+
+    public async Task<UserSubscription?> GetByUserIdAsync(string userId)
     {
         await using var db = await factory.CreateDbContextAsync();
-        return await db.Subscriptions
+        return await db.UserSubscriptions
             .FirstOrDefaultAsync(s => s.UserId == userId);
     }
 
-    public async Task<SuperInvestor.Features.Subscription.Data.Subscription> GetSubscriptionByStripeSubscriptionId(string stripeSubscriptionId)
+    public async Task<UserSubscription?> GetByStripeSubscriptionIdAsync(string stripeSubscriptionId)
     {
         await using var db = await factory.CreateDbContextAsync();
-        return await db.Subscriptions.FirstOrDefaultAsync(s => s.StripeSubscriptionId == stripeSubscriptionId);
+        return await db.UserSubscriptions
+            .FirstOrDefaultAsync(s => s.StripeSubscriptionId == stripeSubscriptionId);
+    }
+    
+    private UserSubscription CreateSubscriptionFromStripe(string userId, Stripe.Subscription subscription)
+    {
+        // Get the subscription item for date information
+        var subscriptionItem = subscription.Items?.Data?.FirstOrDefault();
+        
+        return new UserSubscription
+        {
+            Id = Guid.NewGuid().ToString(),
+            UserId = userId,
+            StripeSubscriptionId = subscription.Id,
+            StripeCustomerId = subscription.CustomerId,
+            Status = MapStripeStatus(subscription.Status),
+            PriceId = subscriptionItem?.Price?.Id,
+            Quantity = subscriptionItem?.Quantity ?? 1,
+            
+            // Get period dates from the subscription item
+            CurrentPeriodStart = subscriptionItem != null
+                ? subscriptionItem.CurrentPeriodStart
+                : DateTime.UtcNow,
+                
+            CurrentPeriodEnd = subscriptionItem != null
+                ? subscriptionItem.CurrentPeriodEnd
+                : DateTime.UtcNow.AddMonths(1),
+                
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
     }
 
-    public async Task<bool> UpdateSubscription(SuperInvestor.Features.Subscription.Data.Subscription subscription)
+    private void UpdateSubscriptionFromStripe(UserSubscription userSubscription, Stripe.Subscription subscription)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        db.Subscriptions.Update(subscription);
-        var savedChanges = await db.SaveChangesAsync();
-        return savedChanges > 0;
+        userSubscription.Status = MapStripeStatus(subscription.Status);
+        
+        var subscriptionItem = subscription.Items?.Data?.FirstOrDefault();
+        
+        if (subscriptionItem != null)
+        {
+            userSubscription.PriceId = subscriptionItem.Price?.Id;
+            userSubscription.Quantity = subscriptionItem.Quantity;
+            userSubscription.CurrentPeriodStart = subscriptionItem.CurrentPeriodStart;
+            userSubscription.CurrentPeriodEnd = subscriptionItem.CurrentPeriodEnd;
+        }
+
+        if (subscription.CanceledAt.HasValue)
+        {
+            userSubscription.CanceledAt = subscription.CanceledAt;
+        }
+
+        userSubscription.UpdatedAt = DateTime.UtcNow;
     }
 
-    public async Task<bool> CancelSubscription(
-        int subscriptionId,
-        string status,
-        DateTime? currentPeriodEnd)
+    private static SubscriptionStatus MapStripeStatus(string stripeStatus)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        var subscription = await GetSubscription(subscriptionId);
-        subscription.Status = status;
-        subscription.EndDate = currentPeriodEnd;
-        subscription.CurrentPeriodEnd = currentPeriodEnd;
-
-        return await db.SaveChangesAsync() > 0;
+        return stripeStatus.ToLower() switch
+        {
+            "active" => SubscriptionStatus.Active,
+            "canceled" => SubscriptionStatus.Canceled,
+            "incomplete" => SubscriptionStatus.Incomplete,
+            "incomplete_expired" => SubscriptionStatus.IncompleteExpired,
+            "past_due" => SubscriptionStatus.PastDue,
+            "trialing" => SubscriptionStatus.Trialing,
+            "unpaid" => SubscriptionStatus.Unpaid,
+            _ => SubscriptionStatus.Active
+        };
     }
 
-    public async Task<bool> UpdateSubscriptionStatus(int subscriptionId, string status)
+    private async Task DowngradeUserFeaturesAsync(string userId)
     {
-        await using var db = await factory.CreateDbContextAsync();
-        var subscription = await GetSubscription(subscriptionId);
-        subscription.Status = status;
-
-        return await db.SaveChangesAsync() > 0;
-    }
-
-    public async Task<SuperInvestor.Features.Subscription.Data.Subscription> CreateSubscription(SuperInvestor.Features.Subscription.Data.Subscription subscription)
-    {
-        await using var db = await factory.CreateDbContextAsync();
-        await db.Subscriptions.AddAsync(subscription);
-        await db.SaveChangesAsync();
-        return subscription;
+        // Implement feature downgrade logic here
     }
 }

@@ -1,20 +1,15 @@
-﻿@using Microsoft.AspNetCore.Identity
-@using Microsoft.EntityFrameworkCore
-@using SuperInvestor.Features.Identity.Data
-@using SuperInvestor.Features.Identity.Services
-@using SuperInvestor.Features.UI.Services
-@using SuperInvestor.Features.Subscription.Services
+﻿@inherits LayoutComponentBase
 
-@inherits LayoutComponentBase
-
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Identity
 @implements IDisposable
 
 @inject IJSRuntime JSRuntime
 @inject NavigationManager NavigationManager
 @inject AuthenticationStateProvider AuthenticationStateProvider
-@inject UserService UserService
-@inject SubscriptionService SubscriptionService
-@inject ToastService ToastService
+@inject IUserService UserService
+@inject ISubscriptionService SubscriptionService
+@inject IToastService ToastService
 
 <head>
     <style>
@@ -194,7 +189,7 @@
 </script>
 
 @code {
-    private ApplicationUser user;
+    private string userId;
     private string initials;
     private string nameOrEmail;
     private bool hasActiveSubscription = false;
@@ -209,11 +204,18 @@
         var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
         if (auth.User.Identity.IsAuthenticated)
         {
-            user = await UserService.GetUser();
-            initials = GetUserInitials(user);
-            nameOrEmail = user.Name ?? user.Email;
-            hasActiveSubscription = await SubscriptionService.HasActiveSubscription(user);
-            isAdmin = await UserService.IsUserAdmin(user);
+            userId = auth.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!string.IsNullOrEmpty(userId))
+            {
+                var user = await UserService.GetByIdAsync(userId);
+                if (user != null)
+                {
+                    initials = GetUserInitials(user);
+                    nameOrEmail = user.Name ?? user.Email;
+                    hasActiveSubscription = await UserService.UserHasActiveSubscriptionAsync(userId);
+                    isAdmin = await UserService.IsUserAdminAsync(user);
+                }
+            }
         }
     }
 

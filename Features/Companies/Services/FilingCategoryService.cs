@@ -2,7 +2,7 @@
 
 namespace SuperInvestor.Features.Companies.Services;
 
-public class FilingCategoryService
+public class FilingCategoryService : IFilingCategoryService
 {
     public List<Filing> CategorizeFilings(Submission submission)
     {

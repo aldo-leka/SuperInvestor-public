@@ -1,6 +1,6 @@
 ﻿namespace SuperInvestor.Features.Notes.Services;
 
-public class NoteHighlightService
+public class NoteHighlightService : INoteHighlightService
 {
     public event Func<int, int, string, Task> HighlightRequested;
     public event Action FilingContentReady;

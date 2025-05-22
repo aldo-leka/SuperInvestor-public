@@ -1,9 +1,9 @@
 ﻿namespace SuperInvestor.Features.UI.Services;
 
-public class ToastService
+public class ToastService : IToastService
 {
     public event Func<string, string, int, Task> OnShow;
-    private const int DefaultDuration = 3000; // 3 seconds
+    public const int DefaultDuration = 3000; // 3 seconds
 
     public async Task ShowToast(string title, string message, int duration = DefaultDuration)
     {
