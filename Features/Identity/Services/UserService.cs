@@ -177,10 +177,16 @@ public class UserService(IDbContextFactory<ApplicationDbContext> factory, ILogge
     {
         try
         {
+            var user = await GetByIdAsync(userId);
+            if (user != null && await IsUserAdminAsync(user))
+            {
+                return true;
+            }
+
             await using var db = await factory.CreateDbContextAsync();
             var hasActiveSubscription = await db.UserSubscriptions
-                .AnyAsync(s => s.UserId == userId && 
-                               (s.Status == SubscriptionStatus.Active || 
+                .AnyAsync(s => s.UserId == userId &&
+                               (s.Status == SubscriptionStatus.Active ||
                                 s.Status == SubscriptionStatus.Trialing) &&
                                s.CurrentPeriodEnd > DateTime.UtcNow);
 
