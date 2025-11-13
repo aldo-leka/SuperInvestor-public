@@ -1,4 +1,5 @@
 ﻿using MailKit.Net.Smtp;
+using MailKit.Security;
 using Microsoft.AspNetCore.Identity;
 using MimeKit;
 using SuperInvestor.Features.Common.Services;
@@ -19,7 +20,16 @@ public class EmailSender : IEmailSender<ApplicationUser>
         message.Body = builder.ToMessageBody();
 
         using var smtp = new SmtpClient();
-        await smtp.ConnectAsync(EnvironmentHelper.SmtpHost, EnvironmentHelper.SmtpPort, EnvironmentHelper.SmtpUseSsl);
+
+        // Determine the correct SecureSocketOptions based on port
+        var secureSocketOptions = EnvironmentHelper.SmtpPort switch
+        {
+            465 => SecureSocketOptions.SslOnConnect,  // SSL/TLS (implicit)
+            587 => SecureSocketOptions.StartTls,       // STARTTLS (explicit)
+            _ => EnvironmentHelper.SmtpUseSsl ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.None
+        };
+
+        await smtp.ConnectAsync(EnvironmentHelper.SmtpHost, EnvironmentHelper.SmtpPort, secureSocketOptions);
         await smtp.AuthenticateAsync(EnvironmentHelper.SmtpUsername, EnvironmentHelper.SmtpPassword);
         await smtp.SendAsync(message);
         await smtp.DisconnectAsync(true);
