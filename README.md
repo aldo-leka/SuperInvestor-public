@@ -27,7 +27,58 @@ SuperInvestor is a note-taking application for investors, built with ASP.NET Cor
    cd SuperInvestor-public
    ```
 3. **Set up configuration**  
-   - Enter configuration values in `launchSettings.json` for local development.
+   - Add the configuration file at `Properties/launchSettings.json` for local development. Sample content:
+   ```
+   {
+      "profiles": {
+         "http": {
+            "commandName": "Project",
+            "launchBrowser": true,
+            "environmentVariables": {
+            "ASPNETCORE_ENVIRONMENT": "Development",
+            "GOOGLE_CLIENT_ID": "",
+            "GOOGLE_CLIENT_SECRET": "",
+            "TURNSTILE_SITE_KEY": "",
+            "TURNSTILE_SECRET_KEY": "",
+            "RESEND_API_KEY": "",
+            "RESEND_SENDER_EMAIL": "",
+            "RESEND_SENDER_NAME": "",
+            "STRIPE_API_KEY": "",
+            "STRIPE_PRICE_ID": "",
+            "STRIPE_WEBHOOK_SECRET": "",
+            "CONNECTION_STRING": ""
+            },
+            "dotnetRunMessages": true,
+            "applicationUrl": "http://localhost:5036"
+         },
+         "https": {
+            "commandName": "Project",
+            "launchBrowser": true,
+            "environmentVariables": {
+            "ASPNETCORE_ENVIRONMENT": "Development"
+            },
+            "dotnetRunMessages": true,
+            "applicationUrl": "https://localhost:7083;http://localhost:5036"
+         },
+         "IIS Express": {
+            "commandName": "IISExpress",
+            "launchBrowser": true,
+            "environmentVariables": {
+            "ASPNETCORE_ENVIRONMENT": "Development"
+            }
+         }
+      },
+      "$schema": "http://json.schemastore.org/launchsettings.json",
+      "iisSettings": {
+         "windowsAuthentication": false,
+         "anonymousAuthentication": true,
+         "iisExpress": {
+            "applicationUrl": "http://localhost:28945",
+            "sslPort": 44367
+         }
+      }
+   }
+   ```
 
 ### **Installing JavaScript Dependencies**
 ```sh
