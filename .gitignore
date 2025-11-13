@@ -405,3 +405,4 @@ wwwroot/dist/
 
 .idea/
 .DS_Store
+.env
