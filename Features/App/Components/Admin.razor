@@ -160,21 +160,44 @@
         var processedNotes = new List<NoteViewModel>();
         foreach (var note in notes.Take(5))
         {
-            var ticker = await CompanyTickerService.GetTickerBySymbolAsync(note.Ticker);
-            var submission = await CompanyTickerService.GetSubmission(ticker.Cik.ToString());
-            var filingIndex = submission.Filings.Recent.AccessionNumber.ToList().IndexOf(note.AccessionNumber);
-            var filingForm = submission.Filings.Recent.Form[filingIndex];
-            var filingDate = DateTime.Parse(submission.Filings.Recent.FilingDate[filingIndex]);
-
-            processedNotes.Add(new NoteViewModel
+            try
             {
-                Ticker = note.Ticker,
-                FilingForm = filingForm,
-                FilingDate = filingDate,
-                Text = note.Text,
-                CreatedAt = note.CreatedAt,
-                UpdatedAt = note.UpdatedAt
-            });
+                var ticker = await CompanyTickerService.GetTickerBySymbolAsync(note.Ticker);
+                if (ticker == null)
+                {
+                    continue; // Skip notes with invalid tickers
+                }
+
+                var submission = await CompanyTickerService.GetSubmission(ticker.Cik.ToString());
+                if (submission?.Filings?.Recent?.AccessionNumber == null)
+                {
+                    continue; // Skip if submission data is incomplete
+                }
+
+                var filingIndex = submission.Filings.Recent.AccessionNumber.ToList().IndexOf(note.AccessionNumber);
+                if (filingIndex == -1)
+                {
+                    continue; // Skip if filing not found
+                }
+
+                var filingForm = submission.Filings.Recent.Form[filingIndex];
+                var filingDate = DateTime.Parse(submission.Filings.Recent.FilingDate[filingIndex]);
+
+                processedNotes.Add(new NoteViewModel
+                {
+                    Ticker = note.Ticker,
+                    FilingForm = filingForm,
+                    FilingDate = filingDate,
+                    Text = note.Text,
+                    CreatedAt = note.CreatedAt,
+                    UpdatedAt = note.UpdatedAt
+                });
+            }
+            catch (Exception)
+            {
+                // Skip notes that fail to process
+                continue;
+            }
         }
         return processedNotes;
     }

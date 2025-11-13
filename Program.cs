@@ -21,10 +21,12 @@ var builder = WebApplication.CreateBuilder(args);
 EnvironmentHelper.ValidateEnvironmentVariables();
 
 // Configure Serilog
+var logLevel = builder.Environment.IsDevelopment() ? LogEventLevel.Information : LogEventLevel.Warning;
 Log.Logger = new LoggerConfiguration()
-    .MinimumLevel.Warning() // Set minimum level to Warning
+    .MinimumLevel.Is(logLevel) // Information in dev, Warning in production
     .MinimumLevel.Override("Microsoft", LogEventLevel.Error) // Override Microsoft logs to Error
-    .WriteTo.PostgreSQL(EnvironmentHelper.ConnectionString, "Logs", needAutoCreateTable: true)
+    .WriteTo.Console() // Log to console
+    .WriteTo.PostgreSQL(EnvironmentHelper.ConnectionString, "Logs", needAutoCreateTable: true) // Log to database
     .CreateLogger();
 
 builder.Host.UseSerilog();
@@ -121,4 +123,5 @@ app.MapControllers();
 
 app.Lifetime.ApplicationStopped.Register(Log.CloseAndFlush);
 
+Log.Information("Application started. Listening on {Urls}", app.Urls);
 app.Run();
