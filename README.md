@@ -40,13 +40,16 @@ SuperInvestor is a note-taking application for investors, built with ASP.NET Cor
             "GOOGLE_CLIENT_SECRET": "",
             "TURNSTILE_SITE_KEY": "",
             "TURNSTILE_SECRET_KEY": "",
-            "RESEND_API_KEY": "",
-            "RESEND_SENDER_EMAIL": "",
-            "RESEND_SENDER_NAME": "",
             "STRIPE_API_KEY": "",
             "STRIPE_PRICE_ID": "",
             "STRIPE_WEBHOOK_SECRET": "",
-            "CONNECTION_STRING": ""
+            "CONNECTION_STRING": "",
+            "SENDER_EMAIL_ADDRESS": "",
+            "SMTP_HOST": "",
+            "SMTP_PORT": "",
+            "SMTP_USERNAME": "",
+            "SMTP_PASSWORD": "",
+            "SMTP_USE_SSL": ""
             },
             "dotnetRunMessages": true,
             "applicationUrl": "http://localhost:5036"
@@ -79,6 +82,30 @@ SuperInvestor is a note-taking application for investors, built with ASP.NET Cor
       }
    }
    ```
+
+### **Email Configuration**
+
+SuperInvestor uses SMTP to send account confirmation and password reset emails. Configure the following environment variables:
+
+**For Gmail:**
+1. Set `SENDER_EMAIL_ADDRESS` to your Gmail address
+2. Set `SMTP_HOST` to `smtp.gmail.com`
+3. Set `SMTP_PORT` to `587`
+4. Set `SMTP_USERNAME` to your Gmail address
+5. Set `SMTP_USE_SSL` to `true`
+6. Set `SMTP_PASSWORD` to a **Gmail App Password** (not your regular password)
+
+**How to generate a Gmail App Password:**
+- Visit: https://myaccount.google.com/apppasswords
+- Select "Mail" for the app type
+- Select "Other (Custom name)" and enter "SuperInvestor"
+- Copy the 16-character password and use it as `SMTP_PASSWORD`
+
+**Note:** You must have 2-Step Verification enabled on your Google Account to generate app passwords.
+
+**For other email providers:**
+- Use your provider's SMTP settings (host, port, SSL settings)
+- Check your email provider's documentation for SMTP configuration
 
 ### **Installing JavaScript Dependencies**
 ```sh

@@ -1,15 +1,33 @@
-﻿using Microsoft.AspNetCore.Identity;
-using Resend;
+﻿using MailKit.Net.Smtp;
+using Microsoft.AspNetCore.Identity;
+using MimeKit;
 using SuperInvestor.Features.Common.Services;
 using SuperInvestor.Features.Identity.Data;
 
 namespace SuperInvestor.Features.Identity.Services;
 
-public class ResendEmailSender(IResend resend) : IEmailSender<ApplicationUser>
+public class EmailSender : IEmailSender<ApplicationUser>
 {
+    private async Task SendEmailAsync(string to, string subject, string htmlBody)
+    {
+        var message = new MimeMessage();
+        message.From.Add(new MailboxAddress("Super Investor", EnvironmentHelper.SenderEmailAddress));
+        message.To.Add(MailboxAddress.Parse(to));
+        message.Subject = subject;
+
+        var builder = new BodyBuilder { HtmlBody = htmlBody };
+        message.Body = builder.ToMessageBody();
+
+        using var smtp = new SmtpClient();
+        await smtp.ConnectAsync(EnvironmentHelper.SmtpHost, EnvironmentHelper.SmtpPort, EnvironmentHelper.SmtpUseSsl);
+        await smtp.AuthenticateAsync(EnvironmentHelper.SmtpUsername, EnvironmentHelper.SmtpPassword);
+        await smtp.SendAsync(message);
+        await smtp.DisconnectAsync(true);
+    }
+
     public async Task SendConfirmationLinkAsync(ApplicationUser user, string email, string confirmationLink)
     {
-        var sender = EnvironmentHelper.ResendSenderEmail;
+        var sender = EnvironmentHelper.SenderEmailAddress;
         var emailTemplate = @$"
             <div style='font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #F0F4F8; border-radius: 10px;'>
                 <h1 style='color: #1A3A5A; text-align: center;'>Welcome to Super Investor!</h1>
@@ -30,20 +48,12 @@ public class ResendEmailSender(IResend resend) : IEmailSender<ApplicationUser>
                 </div>
             </div>";
 
-        var message = new EmailMessage
-        {
-            From = sender,
-            To = email,
-            Subject = "Welcome to Super Investor - Activate Your Account",
-            HtmlBody = emailTemplate
-        };
-
-        await resend.EmailSendAsync(message);
+        await SendEmailAsync(email, "Welcome to Super Investor - Activate Your Account", emailTemplate);
     }
 
     public async Task SendPasswordResetCodeAsync(ApplicationUser user, string email, string resetCode)
     {
-        var sender = EnvironmentHelper.ResendSenderEmail;
+        var sender = EnvironmentHelper.SenderEmailAddress;
         var emailTemplate = @$"
             <div style='font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #F0F4F8; border-radius: 10px;'>
                 <h1 style='color: #1A3A5A; text-align: center;'>Password Reset Request</h1>
@@ -61,20 +71,12 @@ public class ResendEmailSender(IResend resend) : IEmailSender<ApplicationUser>
                 </div>
             </div>";
 
-        var message = new EmailMessage
-        {
-            From = sender,
-            To = email,
-            Subject = "Super Investor - Password Reset Code",
-            HtmlBody = emailTemplate
-        };
-
-        await resend.EmailSendAsync(message);
+        await SendEmailAsync(email, "Super Investor - Password Reset Code", emailTemplate);
     }
 
     public async Task SendPasswordResetLinkAsync(ApplicationUser user, string email, string resetLink)
     {
-        var sender = EnvironmentHelper.ResendSenderEmail;
+        var sender = EnvironmentHelper.SenderEmailAddress;
         var emailTemplate = @$"
             <div style='font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #F0F4F8; border-radius: 10px;'>
                 <h1 style='color: #1A3A5A; text-align: center;'>Reset Your Super Investor Password</h1>
@@ -91,14 +93,6 @@ public class ResendEmailSender(IResend resend) : IEmailSender<ApplicationUser>
                 </div>
             </div>";
 
-        var message = new EmailMessage
-        {
-            From = sender,
-            To = email,
-            Subject = "Super Investor - Reset Your Password",
-            HtmlBody = emailTemplate
-        };
-
-        await resend.EmailSendAsync(message);
+        await SendEmailAsync(email, "Super Investor - Reset Your Password", emailTemplate);
     }
 }

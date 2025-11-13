@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.HttpOverrides;
-using Resend;
 using Serilog;
 using Serilog.Events;
 using SuperInvestor.Features.App.Components;
@@ -61,13 +60,7 @@ builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
 builder.Services.AddOptions();
-builder.Services.AddHttpClient<ResendClient>();
-builder.Services.Configure<ResendClientOptions>(o =>
-{
-    o.ApiToken = EnvironmentHelper.ResendApiKey;
-});
-builder.Services.AddScoped<IResend, ResendClient>();
-builder.Services.AddScoped<IEmailSender<ApplicationUser>, ResendEmailSender>();
+builder.Services.AddScoped<IEmailSender<ApplicationUser>, EmailSender>();
 
 builder.Services.AddHttpClient();
 builder.Services.AddMemoryCache();

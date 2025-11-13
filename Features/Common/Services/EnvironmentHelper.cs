@@ -12,12 +12,15 @@ public static class EnvironmentHelper
     // Turnstile (Cloudflare)
     public static string TurnstileSiteKey => GetEnvironmentVariable("TURNSTILE_SITE_KEY");
     public static string TurnstileSecretKey => GetEnvironmentVariable("TURNSTILE_SECRET_KEY");
-    
-    // Resend Email
-    public static string ResendApiKey => GetEnvironmentVariable("RESEND_API_KEY");
-    public static string ResendSenderEmail => GetEnvironmentVariable("RESEND_SENDER_EMAIL");
-    public static string ResendSenderName => GetEnvironmentVariable("RESEND_SENDER_NAME");
-    
+
+    // Email
+    public static string SenderEmailAddress => GetEnvironmentVariable("SENDER_EMAIL_ADDRESS");
+    public static string SmtpHost => GetEnvironmentVariable("SMTP_HOST");
+    public static int SmtpPort => int.Parse(GetEnvironmentVariable("SMTP_PORT"));
+    public static string SmtpUsername => GetEnvironmentVariable("SMTP_USERNAME");
+    public static string SmtpPassword => GetEnvironmentVariable("SMTP_PASSWORD");
+    public static bool SmtpUseSsl => bool.Parse(GetEnvironmentVariable("SMTP_USE_SSL"));
+
     // Stripe
     public static string StripeApiKey => GetEnvironmentVariable("STRIPE_API_KEY");
     public static string StripePriceId => GetEnvironmentVariable("STRIPE_PRICE_ID");
@@ -45,9 +48,12 @@ public static class EnvironmentHelper
             "GOOGLE_CLIENT_SECRET",
             "TURNSTILE_SITE_KEY",
             "TURNSTILE_SECRET_KEY",
-            "RESEND_API_KEY",
-            "RESEND_SENDER_EMAIL",
-            "RESEND_SENDER_NAME",
+            "SENDER_EMAIL_ADDRESS",
+            "SMTP_HOST",
+            "SMTP_PORT",
+            "SMTP_USERNAME",
+            "SMTP_PASSWORD",
+            "SMTP_USE_SSL",
             "STRIPE_API_KEY",
             "STRIPE_PRICE_ID",
             "STRIPE_WEBHOOK_SECRET",
