@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.AspNetCore.HttpOverrides;
 using Serilog;
 using Serilog.Events;
@@ -58,7 +59,8 @@ builder.Services.AddIdentityCore<ApplicationUser>(options => options.SignIn.Requ
     .AddDefaultTokenProviders();
 
 builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
-    options.UseNpgsql(EnvironmentHelper.ConnectionString));
+    options.UseNpgsql(EnvironmentHelper.ConnectionString)
+        .ConfigureWarnings(warnings => warnings.Ignore(RelationalEventId.PendingModelChangesWarning)));
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
 builder.Services.AddOptions();
@@ -90,6 +92,12 @@ var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
 {
+    var dbContextFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ApplicationDbContext>>();
+    await using (var dbContext = await dbContextFactory.CreateDbContextAsync())
+    {
+        await dbContext.Database.MigrateAsync();
+    }
+
     var userService = scope.ServiceProvider.GetRequiredService<IUserService>();
     await userService.MakeUserAdminAsync("aldo.leka@live.com");
 }
@@ -120,6 +128,7 @@ app.MapRazorComponents<App>()
 
 app.MapAdditionalIdentityEndpoints();
 app.MapControllers();
+app.MapGet("/healthcheck", () => Results.Ok(new { status = "ok" }));
 
 app.Lifetime.ApplicationStopped.Register(Log.CloseAndFlush);
 

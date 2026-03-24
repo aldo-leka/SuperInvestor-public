@@ -1,0 +1,20 @@
+services:
+  app:
+    image: ghcr.io/aldo-leka/superinvestor:${IMAGE_TAG:-latest}
+    container_name: superinvestor-app
+    restart: unless-stopped
+    env_file:
+      - ./.env.production
+    expose:
+      - "3000"
+    networks:
+      - ingress
+      - database
+
+networks:
+  ingress:
+    external: true
+    name: yhp99hliq5cujkenfl2ln6rp
+  database:
+    external: true
+    name: superinvestor-internal

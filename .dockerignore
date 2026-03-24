@@ -1,0 +1,7 @@
+.git
+.github
+bin
+obj
+node_modules
+wwwroot/dist
+.env.production
